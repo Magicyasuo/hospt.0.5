@@ -1,0 +1,315 @@
+{% load custom_filters %}
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formulario de FUID</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <style>/* Contenedor principal de registros */
+        .registros-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); /* Distribución flexible */
+            gap: 15px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            max-height: 300px; /* Scroll si hay muchos registros */
+            overflow-y: auto;
+            box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Cada registro como una tarjeta */
+        .registros-container .form-check {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 10px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            transition: all 0.3s ease-in-out;
+            cursor: pointer;
+        }
+        
+        /* Hover para resaltar */
+        .registros-container .form-check:hover {
+            background: #e9f5ff;
+            box-shadow: 0px 4px 8px rgba(0, 123, 255, 0.2);
+        }
+        
+        /* Checkbox estilizado */
+        .registros-container input[type="checkbox"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+            accent-color: #007bff; /* Estilo del checkbox */
+        }
+        
+        /* Etiquetas del registro */
+        .registros-container .form-check-label {
+            font-size: 0.9rem;
+            color: #495057;
+            transition: color 0.3s ease-in-out;
+        }
+        
+        /* Estilo para el registro seleccionado */
+        input[type="checkbox"]:checked + .form-check-label {
+            color: #007bff;
+            font-weight: bold;
+        }
+        
+        /* Botón "Seleccionar todos" */
+        #selectAllBtn {
+            font-size: 0.9rem;
+            padding: 5px 12px;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            transition: background-color 0.3s ease-in-out;
+        }
+        
+        #selectAllBtn:hover {
+            background-color: #0056b3;
+        }
+        
+        /* Indicador dinámico de seleccionados */
+        .total-selected {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.6rem;
+            border-radius: 20px;
+            background-color: #6c757d;
+            color: white;
+            font-weight: bold;
+        }
+        </style>
+
+</head>
+<body>
+<main>
+
+    <nav class="navbar navbar-light bg-light mb-4 animate__animated animate__fadeInDown animate__delay-1s">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i class="bi bi-archive-fill text-primary me-2" style="font-size:1.5rem;"></i>
+                Hospital del Sarare
+            </a>
+            <span class="navbar-text">
+                {% if request.user.is_authenticated %}
+                    Bienvenido, {{ request.user.username }} | <a href="{% url 'logout' %}">Cerrar sesión</a>
+                {% else %}
+                    <a href="{% url 'login' %}">Iniciar sesión</a>
+                {% endif %}
+            </span>
+        </div>
+    </nav>
+
+        
+    </nav>
+    <div class="container animate__animated animate__fadeInUp" id="mainContent">
+        <div class="mb-4">
+            <h1 class="mb-4">{{ view.action|default:"Crear" }} FUID</h1>
+
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Filtros</h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" id="filtro-form" class="row g-3">
+                        {% csrf_token %}
+                        <div class="col-md-4">
+                            <label for="id_usuario" class="form-label fw-semibold">Filtrar por Usuario</label>
+                            <select name="usuario" id="id_usuario" class="form-select">
+                                <option value="">-- Seleccione un Usuario --</option>
+                                {% for user in form.fields.usuario.queryset %}
+                                    <option value="{{ user.id }}" {% if user.id|stringformat:"s" == request.GET.usuario %}selected{% endif %}>
+                                        {{ user.username }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="id_fecha_inicio" class="form-label fw-semibold">Fecha Inicio</label>
+                            <input type="date" name="fecha_inicio" id="id_fecha_inicio" class="form-control" value="{{ request.GET.fecha_inicio }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="id_fecha_fin" class="form-label fw-semibold">Fecha Fin</label>
+                            <input type="date" name="fecha_fin" id="id_fecha_fin" class="form-control" value="{{ request.GET.fecha_fin }}">
+                        </div>
+                        <div class="col-12 text-end mt-3">
+                            <button type="submit" class="btn btn-primary">Filtrar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Datos del FUID</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        {{ form.errors }}
+
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.entidad_productora.id_for_label }}" class="form-label fw-semibold">Entidad Productora</label>
+                                {{ form.entidad_productora|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.unidad_administrativa.id_for_label }}" class="form-label fw-semibold">Unidad Administrativa</label>
+                                {{ form.unidad_administrativa|add_class:"form-control" }}
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.oficina_productora.id_for_label }}" class="form-label fw-semibold">Oficina Productora</label>
+                                {{ form.oficina_productora|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.objeto.id_for_label }}" class="form-label fw-semibold">Objeto</label>
+                                {{ form.objeto|add_class:"form-control" }}
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3 text-primary">Elaborado Por</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.elaborado_por_nombre.id_for_label }}" class="form-label fw-semibold">Nombre</label>
+                                {{ form.elaborado_por_nombre|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.elaborado_por_cargo.id_for_label }}" class="form-label fw-semibold">Cargo</label>
+                                {{ form.elaborado_por_cargo|add_class:"form-control" }}
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.elaborado_por_lugar.id_for_label }}" class="form-label fw-semibold">Lugar</label>
+                                {{ form.elaborado_por_lugar|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.elaborado_por_fecha.id_for_label }}" class="form-label fw-semibold">Fecha</label>
+                                {{ form.elaborado_por_fecha|add_class:"form-control" }}
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3 text-primary">Entregado Por</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.entregado_por_nombre.id_for_label }}" class="form-label fw-semibold">Nombre</label>
+                                {{ form.entregado_por_nombre|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.entregado_por_cargo.id_for_label }}" class="form-label fw-semibold">Cargo</label>
+                                {{ form.entregado_por_cargo|add_class:"form-control" }}
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.entregado_por_lugar.id_for_label }}" class="form-label fw-semibold">Lugar</label>
+                                {{ form.entregado_por_lugar|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.entregado_por_fecha.id_for_label }}" class="form-label fw-semibold">Fecha</label>
+                                {{ form.entregado_por_fecha|add_class:"form-control" }}
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3 text-primary">Recibido Por</h5>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.recibido_por_nombre.id_for_label }}" class="form-label fw-semibold">Nombre</label>
+                                {{ form.recibido_por_nombre|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.recibido_por_cargo.id_for_label }}" class="form-label fw-semibold">Cargo</label>
+                                {{ form.recibido_por_cargo|add_class:"form-control" }}
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.recibido_por_lugar.id_for_label }}" class="form-label fw-semibold">Lugar</label>
+                                {{ form.recibido_por_lugar|add_class:"form-control" }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.recibido_por_fecha.id_for_label }}" class="form-label fw-semibold">Fecha</label>
+                                {{ form.recibido_por_fecha|add_class:"form-control" }}
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3 text-primary">Registros</h5>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <label for="{{ form.registros.id_for_label }}" class="form-label fw-bold mb-0">Selecciona los registros disponibles</label>
+                                <div>
+                                    <button type="button" id="selectAllBtn" class="btn btn-sm btn-primary">Seleccionar todos</button>
+                                    <span class="badge bg-secondary total-selected ms-2">Seleccionados: 0</span>
+                                </div>
+                            </div>
+                            <div class="registros-container">
+                                {{ form.registros }}
+                            </div>
+                        </div>
+                        
+                        
+
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-success">Guardar</button>
+                            <a href="{% url 'fuid_list' %}" class="btn btn-secondary">Cancelar</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+        <footer class="animate__animated animate__fadeInUp">
+            <p>© {{ current_year }} Hospital del Sarare - Central de Archivos del Sarare. Todos los derechos reservados.</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+document.addEventListener('DOMContentLoaded', () => {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const checkboxes = document.querySelectorAll('.registros-container input[type="checkbox"]');
+    const totalSelected = document.querySelector('.total-selected');
+    
+    if (selectAllBtn && checkboxes.length > 0) {
+        let allSelected = false;
+
+        selectAllBtn.addEventListener('click', () => {
+            allSelected = !allSelected;
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = allSelected;
+            });
+            updateSelectedCount();
+            selectAllBtn.textContent = allSelected ? "Deseleccionar todos" : "Seleccionar todos";
+        });
+
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectedCount);
+        });
+
+        function updateSelectedCount() {
+            const selectedCount = Array.from(checkboxes).filter(checkbox => checkbox.checked).length;
+            totalSelected.textContent = `Seleccionados: ${selectedCount}`;
+        }
+    }
+});
+
+
+    </script>
+    
+</body>
+</html>

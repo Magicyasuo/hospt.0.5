@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<div class="container">
+    <h1>Crear/Editar Registro</h1>
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Guardar</button>
+    </form>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Al cambiar la serie, cargamos subseries
+        $("#id_codigo_serie").change(function() {
+            var serieId = $(this).val();  // ID de la serie seleccionada
+            if (serieId) {
+                $.ajax({
+                    url: "{% url 'cargar_subseries' %}",
+                    data: {
+                        'serie_id': serieId
+                    },
+                    dataType: 'json',
+                    success: function(data) {
+                        var subserieSelect = $("#id_codigo_subserie");
+                        subserieSelect.empty();  // Vacía el select
+                        subserieSelect.append('<option value="">Seleccione una subserie</option>');
+                        
+                        $.each(data, function(index, item) {
+                            // item.id e item.nombre vienen del .values('id','nombre')
+                            subserieSelect.append('<option value="' + item.id + '">' + item.nombre + '</option>');
+                        });
+                    }
+                });
+            } else {
+                // Si no se seleccionó nada, vaciamos las subseries
+                $("#id_codigo_subserie").empty();
+                $("#id_codigo_subserie").append('<option value="">Seleccione una subserie</option>');
+            }
+        });
+    });
+</script>
+
+{% endblock %}

@@ -1,0 +1,458 @@
+{% load custom_filters %}
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalle del FUID</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- Animate.css -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <!-- Anime.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #f4f6f8, #e9edf1); /* Fondo limpio y profesional */
+            font-family: 'Roboto', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background-color: #f8f9fa; /* Cremita */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Sombra sutil */
+        }
+        .navbar-brand, .navbar-text a {
+            color: #003366 !important; /* Azul oscuro */
+            transition: color 0.2s ease;
+        }
+        .navbar-text a:hover {
+            color: #0056b3 !important; /* Azul más vibrante */
+        }
+        .page-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #003366; /* Azul oscuro */
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            color: #333; /* Gris oscuro */
+            border-bottom: 2px solid #003366; /* Azul oscuro */
+            display: inline-block;
+            padding-bottom: 0.25rem;
+        }
+        .info-card {
+            border: none;
+            background: #ffffff; /* Blanco */
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            margin-bottom: 2rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            opacity: 0; /* Para animación con Anime.js */
+        }
+        .info-card:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.07);
+        }
+        .info-card-header {
+            background: #003366; /* Azul oscuro */
+            color: #ffffff; /* Blanco */
+            border-radius: 10px 10px 0 0;
+            padding: 1rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .info-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .info-item {
+            background: #f8f9fa; /* Cremita */
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            flex: 1 1 300px;
+            min-width: 250px;
+        }
+        .info-item strong {
+            display: block;
+            color: #003366; /* Azul oscuro */
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+        .person-block {
+            background: #ffffff; /* Blanco */
+            border: 1px solid #dcdcdc;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            opacity: 0; /* Para animación */
+        }
+        .person-block:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        }
+        .person-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #003366; /* Azul oscuro */
+            border-bottom: 1px solid #dcdcdc;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+        }
+        .person-info p {
+            margin: 0.25rem 0;
+        }
+        .person-info strong {
+            color: #333; /* Gris oscuro */
+        }
+        .table th {
+            background-color: #003366 !important; /* Azul oscuro */
+            color: #ffffff !important; /* Blanco */
+            font-weight: 600 !important;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .dt-inputs input {
+            width: 100%;
+            padding: 2px;
+            font-size: 0.8rem;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        .btn-excel {
+            background-color: #28a745; /* Verde */
+            color: #ffffff; /* Blanco */
+            transition: transform 0.2s ease;
+        }
+        .btn-excel:hover {
+            background-color: #218838; /* Verde oscuro */
+            transform: scale(1.05);
+        }
+        .btn-pdf {
+            background-color: #dc3545; /* Rojo */
+            color: #ffffff; /* Blanco */
+            transition: transform 0.2s ease;
+        }
+        .btn-pdf:hover {
+            background-color: #c82333; /* Rojo oscuro */
+            transform: scale(1.05);
+        }
+        .no-records {
+            text-align: center;
+            font-style: italic;
+            color: #555; /* Gris mediano */
+        }
+    
+        /* Contenedor principal para animaciones */
+        #mainContainer {
+            opacity: 0;
+        }
+    </style>
+    
+</head>
+<body>
+<main>
+    <nav class="navbar navbar-light bg-light mb-4 animate__animated animate__fadeInDown animate__delay-1s">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i class="bi bi-archive-fill text-primary me-2" style="font-size:1.5rem;"></i>
+                Hospital del Sarare
+            </a>
+            <span class="navbar-text">
+                {% if request.user.is_authenticated %}
+                    Bienvenido, {{ request.user.username }} | <a href="{% url 'logout' %}">Cerrar sesión</a>
+                {% else %}
+                    <a href="{% url 'login' %}">Iniciar sesión</a>
+                {% endif %}
+            </span>
+        </div>
+    </nav>
+
+        
+    </nav>
+
+    <div class="container-fluid animate__animated animate__fadeInUp" id="mainContainer">
+        <h1 class="page-title animate__animated animate__fadeInDown"><i class="bi bi-file-earmark-text-fill"></i> Detalle del FUID #{{ fuid.id }}</h1>
+
+        <!-- Información del FUID -->
+        <div class="info-card animate__animated animate__fadeInUp">
+            <div class="info-card-header">
+                Información General del FUID
+            </div>
+
+            <div class="text-end mb-3">
+                <a href="{% url 'export_fuid_to_excel' fuid.id %}" class="btn btn-success">
+                    <i class="bi bi-file-earmark-spreadsheet-fill"></i> Exportar a Excel
+                </a>
+            </div>
+            
+            
+            <div class="card-body">
+                <div class="info-row">
+                    <div class="info-item">
+                        <strong>Entidad Productora</strong>
+                        <span>{{ fuid.entidad_productora }}</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Unidad Administrativa</strong>
+                        <span>{{ fuid.unidad_administrativa }}</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Oficina Productora</strong>
+                        <span>{{ fuid.oficina_productora }}</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Objeto</strong>
+                        <span>{{ fuid.objeto }}</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Fecha de Creación</strong>
+                        <span>{{ fuid.fecha_creacion|date:"Y-m-d H:i" }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Personas involucradas -->
+        <div class="info-card animate__animated animate__fadeInUp animate__delay-1s">
+            <div class="info-card-header">
+                Responsables
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="person-block">
+                            <div class="person-title"><i class="bi bi-pencil-square"></i> Elaborado Por</div>
+                            <div class="person-info">
+                                <p><strong>Nombre:</strong> {{ fuid.elaborado_por_nombre }}</p>
+                                <p><strong>Cargo:</strong> {{ fuid.elaborado_por_cargo }}</p>
+                                <p><strong>Lugar:</strong> {{ fuid.elaborado_por_lugar }}</p>
+                                <p><strong>Fecha:</strong> {{ fuid.elaborado_por_fecha }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="person-block">
+                            <div class="person-title"><i class="bi bi-arrow-right-square"></i> Entregado Por</div>
+                            <div class="person-info">
+                                <p><strong>Nombre:</strong> {{ fuid.entregado_por_nombre }}</p>
+                                <p><strong>Cargo:</strong> {{ fuid.entregado_por_cargo }}</p>
+                                <p><strong>Lugar:</strong> {{ fuid.entregado_por_lugar }}</p>
+                                <p><strong>Fecha:</strong> {{ fuid.entregado_por_fecha }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="person-block">
+                            <div class="person-title"><i class="bi bi-check2-square"></i> Recibido Por</div>
+                            <div class="person-info">
+                                <p><strong>Nombre:</strong> {{ fuid.recibido_por_nombre }}</p>
+                                <p><strong>Cargo:</strong> {{ fuid.recibido_por_cargo }}</p>
+                                <p><strong>Lugar:</strong> {{ fuid.recibido_por_lugar }}</p>
+                                <p><strong>Fecha:</strong> {{ fuid.recibido_por_fecha }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Registros asociados -->
+        <div class="info-card animate__animated animate__fadeInUp animate__delay-2s">
+            <div class="info-card-header">
+                Registros Asociados al FUID
+                <!-- Dentro de fuid_complete_list.html, cerca de "Registros Asociados" -->
+<div class="text-end mb-3">
+    <a href="{% url 'agregar_registro_a_fuid' fuid.id %}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-circle"></i> Agregar Registro
+    </a>
+</div>
+
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="overflow-x:auto;">
+                    <table id="tablaFUID" class="table table-striped table-bordered w-100">
+                        <thead>
+                            <tr>
+                                <th>N° Orden</th>
+                                <th>Código</th>
+                                <th>Nombre Serie</th>
+                                <th>Nombre Subserie</th>
+                                <th>Unidad Documental</th>
+                                <th>F. Archivo</th>
+                                <th>F. Inicial</th>
+                                <th>F. Final</th>
+                                <th>Sop. Físico</th>
+                                <th>Sop. Electrónico</th>
+                                <th>Caja</th>
+                                <th>Carpeta</th>
+                                <th>Tomo</th>
+                                <th>N° Folios</th>
+                                <th>Tipo</th>
+                                <th>Cant.</th>
+                                <th>Ubicación</th>
+                                <th>Cant. Electrónicos</th>
+                                <th>Tamaño Electrónico</th>
+                                <th>Notas</th>
+                                <th>Creado Por</th>
+                                <th>F. Creación</th>
+                            </tr>
+                            <tr class="dt-inputs">
+                                <th><input type="text" placeholder="N° Orden" /></th>
+                                <th><input type="text" placeholder="Código" /></th>
+                                <th><input type="text" placeholder="Cód. Serie" /></th>
+                                <th><input type="text" placeholder="Cód. Subserie" /></th>
+                                <th><input type="text" placeholder="Unidad Documental" /></th>
+                                <th><input type="text" placeholder="F. Archivo" /></th>
+                                <th><input type="text" placeholder="F. Inicial" /></th>
+                                <th><input type="text" placeholder="F. Final" /></th>
+                                <th><input type="text" placeholder="Sop. Físico" /></th>
+                                <th><input type="text" placeholder="Sop. Electrónico" /></th>
+                                <th><input type="text" placeholder="Caja" /></th>
+                                <th><input type="text" placeholder="Carpeta" /></th>
+                                <th><input type="text" placeholder="Tomo/Legajo/Libro" /></th>
+                                <th><input type="text" placeholder="N° Folios" /></th>
+                                <th><input type="text" placeholder="Tipo" /></th>
+                                <th><input type="text" placeholder="Cant." /></th>
+                                <th><input type="text" placeholder="Ubicación" /></th>
+                                <th><input type="text" placeholder="Cant. Elec." /></th>
+                                <th><input type="text" placeholder="Tamaño Elec." /></th>
+                                <th><input type="text" placeholder="Notas" /></th>
+                                <th><input type="text" placeholder="Creado Por" /></th>
+                                <th><input type="text" placeholder="F. Creación" /></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for registro in registros %}
+                            <tr>
+                                <td>{{ registro.numero_orden }}</td>
+                                <td>{{ registro.codigo }}</td>
+                                <td>{{ registro.codigo_serie }}</td>
+                                <td>{{ registro.codigo_subserie }}</td>
+                                <td>{{ registro.unidad_documental }}</td>
+                                <td>{{ registro.fecha_archivo }}</td>
+                                <td>{{ registro.fecha_inicial }}</td>
+                                <td>{{ registro.fecha_final }}</td>
+                                <td>{% if registro.soporte_fisico %}✔{% else %}✖{% endif %}</td>
+                                <td>{% if registro.soporte_electronico %}✔{% else %}✖{% endif %}</td>
+                                <td>{{ registro.caja }}</td>
+                                <td>{{ registro.carpeta }}</td>
+                                <td>{{ registro.tomo_legajo_libro }}</td>
+                                <td>{{ registro.numero_folios }}</td>
+                                <td>{{ registro.tipo }}</td>
+                                <td>{{ registro.cantidad }}</td>
+                                <td>{{ registro.ubicacion }}</td>
+                                <td>{{ registro.cantidad_documentos_electronicos }}</td>
+                                <td>{{ registro.tamano_documentos_electronicos }}</td>
+                                <td>{{ registro.notas }}</td>
+                                <td>{{ registro.creado_por }}</td>
+                                <td>{{ registro.fecha_creacion }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="22" class="no-records">No hay registros asociados a este FUID.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+        <footer>
+            <p>&copy; {{ current_year }} Hospital del Sarare - Central de Archivos del Sarare.</p>
+        </footer>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+    
+    
+
+    <script>
+        $(document).ready(function() {
+            var table = $('#tablaFUID').DataTable({
+                language: {
+                    url: "//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json"
+                },
+                paging: true,
+                searching: true,
+                ordering: true,
+                info: true,
+                responsive: false,
+                dom: '<"top"f>rt<"bottom"lp><"clear">', // Eliminado el componente "B" (botones)
+            });
+    
+            $('#tablaFUID thead tr.dt-inputs th input').on('keyup change', function() {
+                var columnIndex = $(this).closest('th').index();
+                table.column(columnIndex).search(this.value).draw();
+            });
+        });
+    
+        document.addEventListener('DOMContentLoaded', () => {
+            // Animar el navbar
+            anime({
+                targets: 'nav.navbar',
+                opacity: [0,1],
+                translateY: [-20,0],
+                duration: 800,
+                easing: 'easeOutExpo'
+            });
+    
+            // Animar el contenedor principal
+            anime({
+                targets: '#mainContainer',
+                opacity: [0,1],
+                duration: 800,
+                easing: 'easeOutExpo',
+                delay: 300
+            });
+    
+            // Animar las info-cards y person-block
+            anime({
+                targets: '.info-card, .person-block',
+                opacity: [0,1],
+                translateY: [20,0],
+                duration: 800,
+                delay: anime.stagger(150),
+                easing: 'easeOutExpo'
+            });
+    
+            // Animar las filas de la tabla
+            anime({
+                targets: '#tablaFUID tbody tr',
+                opacity: [0,1],
+                translateY: [10,0],
+                duration: 500,
+                delay: anime.stagger(50),
+                easing: 'easeOutExpo',
+                delay: 1000
+            });
+        });
+    </script>
+    
+</body>
+</html>
