@@ -126,30 +126,24 @@
                 <div class="card-body">
                     <form method="get" id="filtro-form" class="row g-3">
                         {% csrf_token %}
-                        <div class="col-md-4">
-                            <label for="id_usuario" class="form-label fw-semibold">Filtrar por Usuario</label>
-                            <select name="usuario" id="id_usuario" class="form-select">
-                                <option value="">-- Seleccione un Usuario --</option>
-                                {% for user in form.fields.usuario.queryset %}
-                                    <option value="{{ user.id }}" {% if user.id|stringformat:"s" == request.GET.usuario %}selected{% endif %}>
-                                        {{ user.username }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-4">
+                        <!-- Campo Usuario (oculto) -->
+                        <input type="hidden" name="usuario" id="id_usuario" value="{{ request.user.id }}">
+                
+                        <div class="col-md-6">
                             <label for="id_fecha_inicio" class="form-label fw-semibold">Fecha Inicio</label>
                             <input type="date" name="fecha_inicio" id="id_fecha_inicio" class="form-control" value="{{ request.GET.fecha_inicio }}">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label for="id_fecha_fin" class="form-label fw-semibold">Fecha Fin</label>
                             <input type="date" name="fecha_fin" id="id_fecha_fin" class="form-control" value="{{ request.GET.fecha_fin }}">
                         </div>
+                
                         <div class="col-12 text-end mt-3">
                             <button type="submit" class="btn btn-primary">Filtrar</button>
                         </div>
                     </form>
                 </div>
+                
             </div>
 
             <div class="card">

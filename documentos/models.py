@@ -119,6 +119,18 @@ class RegistroDeArchivo(models.Model):
             ("edit_own_registro", "Puede editar sus propios registros"),
             ("delete_own_registro", "Puede eliminar sus propios registros"),
         ]
+    
+    def save(self, *args, **kwargs):
+        # Valor constante para la entidad
+        entidad_codigo = "301"
+
+        # Generar el valor del código
+        if self.codigo_serie:
+            serie_codigo = self.codigo_serie.codigo.zfill(2)  # Asegurar dos dígitos en el código de la serie
+            subserie_codigo = self.codigo_subserie.codigo.zfill(2) if self.codigo_subserie else "00"  # Subserie o "00"
+            self.codigo = f"{entidad_codigo}.{serie_codigo}.{subserie_codigo}"
+
+        super().save(*args, **kwargs)   
 
     def __str__(self):
         return f"{self.numero_orden} - {self.unidad_documental or 'Sin Nombre'}"
@@ -158,6 +170,8 @@ class FichaPaciente (models.Model):
     sexo = models.CharField(max_length=10, default='Masculino')
     activo = models.BooleanField(default=True)
 
+        
+
     
 
     def __str__(self):
@@ -177,3 +191,14 @@ class PerfilUsuario(models.Model):
         return f"{self.user.username} - {self.oficina.nombre}"
 
 
+# from guardian.shortcuts import get_perms
+# from documentos.models import RegistroDeArchivo
+# from django.contrib.auth.models import User
+
+# # Usuario y registro específicos
+# usuario = User.objects.get(username="metalhead")  # Cambia por el nombre del usuario real
+# registro = RegistroDeArchivo.objects.get(id=20133)  # Cambia por el ID del registro real
+
+# # Verificar permisos
+# permisos = get_perms(usuario, registro)
+# print(permisos)

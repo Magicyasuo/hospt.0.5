@@ -86,11 +86,1173 @@ print(f"Todo el contenido del proyecto ha sido exportado a {output_file}")
 [Error al leer el archivo: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte]
 
 
+### .\.git\COMMIT_EDITMSG ###
+Initial commit with full project files
+
+
+### .\.git\config ###
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[remote "origin"]
+	url = https://github.com/Magicyasuo/hospt.0.5.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+
+
+### .\.git\description ###
+Unnamed repository; edit this file 'description' to name the repository.
+
+
+### .\.git\HEAD ###
+ref: refs/heads/main
+
+
+### .\.git\index ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xdf in position 14: invalid continuation byte]
+
+
+### .\.git\hooks\applypatch-msg.sample ###
+#!/bin/sh
+#
+# An example hook script to check the commit log message taken by
+# applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.  The hook is
+# allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "applypatch-msg".
+
+. git-sh-setup
+commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
+test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
+:
+
+
+### .\.git\hooks\commit-msg.sample ###
+#!/bin/sh
+#
+# An example hook script to check the commit log message.
+# Called by "git commit" with one argument, the name of the file
+# that has the commit message.  The hook should exit with non-zero
+# status after issuing an appropriate message if it wants to stop the
+# commit.  The hook is allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "commit-msg".
+
+# Uncomment the below to add a Signed-off-by line to the message.
+# Doing this in a hook is a bad idea in general, but the prepare-commit-msg
+# hook is more suited to it.
+#
+# SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
+
+# This example catches duplicate Signed-off-by lines.
+
+test "" = "$(grep '^Signed-off-by: ' "$1" |
+	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
+	echo >&2 Duplicate Signed-off-by lines.
+	exit 1
+}
+
+
+### .\.git\hooks\fsmonitor-watchman.sample ###
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use IPC::Open2;
+
+# An example hook script to integrate Watchman
+# (https://facebook.github.io/watchman/) with git to speed up detecting
+# new and modified files.
+#
+# The hook is passed a version (currently 2) and last update token
+# formatted as a string and outputs to stdout a new update token and
+# all files that have been modified since the update token. Paths must
+# be relative to the root of the working tree and separated by a single NUL.
+#
+# To enable this hook, rename this file to "query-watchman" and set
+# 'git config core.fsmonitor .git/hooks/query-watchman'
+#
+my ($version, $last_update_token) = @ARGV;
+
+# Uncomment for debugging
+# print STDERR "$0 $version $last_update_token\n";
+
+# Check the hook interface version
+if ($version ne 2) {
+	die "Unsupported query-fsmonitor hook version '$version'.\n" .
+	    "Falling back to scanning...\n";
+}
+
+my $git_work_tree = get_working_dir();
+
+my $retry = 1;
+
+my $json_pkg;
+eval {
+	require JSON::XS;
+	$json_pkg = "JSON::XS";
+	1;
+} or do {
+	require JSON::PP;
+	$json_pkg = "JSON::PP";
+};
+
+launch_watchman();
+
+sub launch_watchman {
+	my $o = watchman_query();
+	if (is_work_tree_watched($o)) {
+		output_result($o->{clock}, @{$o->{files}});
+	}
+}
+
+sub output_result {
+	my ($clockid, @files) = @_;
+
+	# Uncomment for debugging watchman output
+	# open (my $fh, ">", ".git/watchman-output.out");
+	# binmode $fh, ":utf8";
+	# print $fh "$clockid\n@files\n";
+	# close $fh;
+
+	binmode STDOUT, ":utf8";
+	print $clockid;
+	print "\0";
+	local $, = "\0";
+	print @files;
+}
+
+sub watchman_clock {
+	my $response = qx/watchman clock "$git_work_tree"/;
+	die "Failed to get clock id on '$git_work_tree'.\n" .
+		"Falling back to scanning...\n" if $? != 0;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub watchman_query {
+	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
+	or die "open2() failed: $!\n" .
+	"Falling back to scanning...\n";
+
+	# In the query expression below we're asking for names of files that
+	# changed since $last_update_token but not from the .git folder.
+	#
+	# To accomplish this, we're using the "since" generator to use the
+	# recency index to select candidate nodes and "fields" to limit the
+	# output to file names only. Then we're using the "expression" term to
+	# further constrain the results.
+	my $last_update_line = "";
+	if (substr($last_update_token, 0, 1) eq "c") {
+		$last_update_token = "\"$last_update_token\"";
+		$last_update_line = qq[\n"since": $last_update_token,];
+	}
+	my $query = <<"	END";
+		["query", "$git_work_tree", {$last_update_line
+			"fields": ["name"],
+			"expression": ["not", ["dirname", ".git"]]
+		}]
+	END
+
+	# Uncomment for debugging the watchman query
+	# open (my $fh, ">", ".git/watchman-query.json");
+	# print $fh $query;
+	# close $fh;
+
+	print CHLD_IN $query;
+	close CHLD_IN;
+	my $response = do {local $/; <CHLD_OUT>};
+
+	# Uncomment for debugging the watch response
+	# open ($fh, ">", ".git/watchman-response.json");
+	# print $fh $response;
+	# close $fh;
+
+	die "Watchman: command returned no output.\n" .
+	"Falling back to scanning...\n" if $response eq "";
+	die "Watchman: command returned invalid output: $response\n" .
+	"Falling back to scanning...\n" unless $response =~ /^\{/;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub is_work_tree_watched {
+	my ($output) = @_;
+	my $error = $output->{error};
+	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
+		$retry--;
+		my $response = qx/watchman watch "$git_work_tree"/;
+		die "Failed to make watchman watch '$git_work_tree'.\n" .
+		    "Falling back to scanning...\n" if $? != 0;
+		$output = $json_pkg->new->utf8->decode($response);
+		$error = $output->{error};
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		# Uncomment for debugging watchman output
+		# open (my $fh, ">", ".git/watchman-output.out");
+		# close $fh;
+
+		# Watchman will always return all files on the first query so
+		# return the fast "everything is dirty" flag to git and do the
+		# Watchman query just to get it over with now so we won't pay
+		# the cost in git to look up each individual file.
+		my $o = watchman_clock();
+		$error = $output->{error};
+
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		output_result($o->{clock}, ("/"));
+		$last_update_token = $o->{clock};
+
+		eval { launch_watchman() };
+		return 0;
+	}
+
+	die "Watchman: $error.\n" .
+	"Falling back to scanning...\n" if $error;
+
+	return 1;
+}
+
+sub get_working_dir {
+	my $working_dir;
+	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
+		$working_dir = Win32::GetCwd();
+		$working_dir =~ tr/\\/\//;
+	} else {
+		require Cwd;
+		$working_dir = Cwd::cwd();
+	}
+
+	return $working_dir;
+}
+
+
+### .\.git\hooks\post-update.sample ###
+#!/bin/sh
+#
+# An example hook script to prepare a packed repository for use over
+# dumb transports.
+#
+# To enable this hook, rename this file to "post-update".
+
+exec git update-server-info
+
+
+### .\.git\hooks\pre-applypatch.sample ###
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed
+# by applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-applypatch".
+
+. git-sh-setup
+precommit="$(git rev-parse --git-path hooks/pre-commit)"
+test -x "$precommit" && exec "$precommit" ${1+"$@"}
+:
+
+
+### .\.git\hooks\pre-commit.sample ###
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git commit" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message if
+# it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-commit".
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+# If you want to allow non-ASCII filenames set this variable to true.
+allownonascii=$(git config --type=bool hooks.allownonascii)
+
+# Redirect output to stderr.
+exec 1>&2
+
+# Cross platform projects tend to avoid non-ASCII filenames; prevent
+# them from being added to the repository. We exploit the fact that the
+# printable range starts at the space character and ends with tilde.
+if [ "$allownonascii" != "true" ] &&
+	# Note that the use of brackets around a tr range is ok here, (it's
+	# even required, for portability to Solaris 10's /usr/bin/tr), since
+	# the square bracket bytes happen to fall in the designated range.
+	test $(git diff-index --cached --name-only --diff-filter=A -z $against |
+	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
+then
+	cat <<\EOF
+Error: Attempt to add a non-ASCII file name.
+
+This can cause problems if you want to work with people on other platforms.
+
+To be portable it is advisable to rename the file.
+
+If you know what you are doing you can disable this check using:
+
+  git config hooks.allownonascii true
+EOF
+	exit 1
+fi
+
+# If there are whitespace errors, print the offending file names and fail.
+exec git diff-index --check --cached $against --
+
+
+### .\.git\hooks\pre-merge-commit.sample ###
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git merge" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message to
+# stderr if it wants to stop the merge commit.
+#
+# To enable this hook, rename this file to "pre-merge-commit".
+
+. git-sh-setup
+test -x "$GIT_DIR/hooks/pre-commit" &&
+        exec "$GIT_DIR/hooks/pre-commit"
+:
+
+
+### .\.git\hooks\pre-push.sample ###
+#!/bin/sh
+
+# An example hook script to verify what is about to be pushed.  Called by "git
+# push" after it has checked the remote status, but before anything has been
+# pushed.  If this script exits with a non-zero status nothing will be pushed.
+#
+# This hook is called with the following parameters:
+#
+# $1 -- Name of the remote to which the push is being done
+# $2 -- URL to which the push is being done
+#
+# If pushing without using a named remote those arguments will be equal.
+#
+# Information about the commits which are being pushed is supplied as lines to
+# the standard input in the form:
+#
+#   <local ref> <local oid> <remote ref> <remote oid>
+#
+# This sample shows how to prevent push of commits where the log message starts
+# with "WIP" (work in progress).
+
+remote="$1"
+url="$2"
+
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+
+while read local_ref local_oid remote_ref remote_oid
+do
+	if test "$local_oid" = "$zero"
+	then
+		# Handle delete
+		:
+	else
+		if test "$remote_oid" = "$zero"
+		then
+			# New branch, examine all commits
+			range="$local_oid"
+		else
+			# Update to existing branch, examine new commits
+			range="$remote_oid..$local_oid"
+		fi
+
+		# Check for WIP commit
+		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
+		if test -n "$commit"
+		then
+			echo >&2 "Found WIP commit in $local_ref, not pushing"
+			exit 1
+		fi
+	fi
+done
+
+exit 0
+
+
+### .\.git\hooks\pre-rebase.sample ###
+#!/bin/sh
+#
+# Copyright (c) 2006, 2008 Junio C Hamano
+#
+# The "pre-rebase" hook is run just before "git rebase" starts doing
+# its job, and can prevent the command from running by exiting with
+# non-zero status.
+#
+# The hook is called with the following parameters:
+#
+# $1 -- the upstream the series was forked from.
+# $2 -- the branch being rebased (or empty when rebasing the current branch).
+#
+# This sample shows how to prevent topic branches that are already
+# merged to 'next' branch from getting rebased, because allowing it
+# would result in rebasing already published history.
+
+publish=next
+basebranch="$1"
+if test "$#" = 2
+then
+	topic="refs/heads/$2"
+else
+	topic=`git symbolic-ref HEAD` ||
+	exit 0 ;# we do not interrupt rebasing detached HEAD
+fi
+
+case "$topic" in
+refs/heads/??/*)
+	;;
+*)
+	exit 0 ;# we do not interrupt others.
+	;;
+esac
+
+# Now we are dealing with a topic branch being rebased
+# on top of master.  Is it OK to rebase it?
+
+# Does the topic really exist?
+git show-ref -q "$topic" || {
+	echo >&2 "No such branch $topic"
+	exit 1
+}
+
+# Is topic fully merged to master?
+not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
+if test -z "$not_in_master"
+then
+	echo >&2 "$topic is fully merged to master; better remove it."
+	exit 1 ;# we could allow it, but there is no point.
+fi
+
+# Is topic ever merged to next?  If so you should not be rebasing it.
+only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
+only_next_2=`git rev-list ^master           ${publish} | sort`
+if test "$only_next_1" = "$only_next_2"
+then
+	not_in_topic=`git rev-list "^$topic" master`
+	if test -z "$not_in_topic"
+	then
+		echo >&2 "$topic is already up to date with master"
+		exit 1 ;# we could allow it, but there is no point.
+	else
+		exit 0
+	fi
+else
+	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
+	/usr/bin/perl -e '
+		my $topic = $ARGV[0];
+		my $msg = "* $topic has commits already merged to public branch:\n";
+		my (%not_in_next) = map {
+			/^([0-9a-f]+) /;
+			($1 => 1);
+		} split(/\n/, $ARGV[1]);
+		for my $elem (map {
+				/^([0-9a-f]+) (.*)$/;
+				[$1 => $2];
+			} split(/\n/, $ARGV[2])) {
+			if (!exists $not_in_next{$elem->[0]}) {
+				if ($msg) {
+					print STDERR $msg;
+					undef $msg;
+				}
+				print STDERR " $elem->[1]\n";
+			}
+		}
+	' "$topic" "$not_in_next" "$not_in_master"
+	exit 1
+fi
+
+<<\DOC_END
+
+This sample hook safeguards topic branches that have been
+published from being rewound.
+
+The workflow assumed here is:
+
+ * Once a topic branch forks from "master", "master" is never
+   merged into it again (either directly or indirectly).
+
+ * Once a topic branch is fully cooked and merged into "master",
+   it is deleted.  If you need to build on top of it to correct
+   earlier mistakes, a new topic branch is created by forking at
+   the tip of the "master".  This is not strictly necessary, but
+   it makes it easier to keep your history simple.
+
+ * Whenever you need to test or publish your changes to topic
+   branches, merge them into "next" branch.
+
+The script, being an example, hardcodes the publish branch name
+to be "next", but it is trivial to make it configurable via
+$GIT_DIR/config mechanism.
+
+With this workflow, you would want to know:
+
+(1) ... if a topic branch has ever been merged to "next".  Young
+    topic branches can have stupid mistakes you would rather
+    clean up before publishing, and things that have not been
+    merged into other branches can be easily rebased without
+    affecting other people.  But once it is published, you would
+    not want to rewind it.
+
+(2) ... if a topic branch has been fully merged to "master".
+    Then you can delete it.  More importantly, you should not
+    build on top of it -- other people may already want to
+    change things related to the topic as patches against your
+    "master", so if you need further changes, it is better to
+    fork the topic (perhaps with the same name) afresh from the
+    tip of "master".
+
+Let's look at this example:
+
+		   o---o---o---o---o---o---o---o---o---o "next"
+		  /       /           /           /
+		 /   a---a---b A     /           /
+		/   /               /           /
+	       /   /   c---c---c---c B         /
+	      /   /   /             \         /
+	     /   /   /   b---b C     \       /
+	    /   /   /   /             \     /
+    ---o---o---o---o---o---o---o---o---o---o---o "master"
+
+
+A, B and C are topic branches.
+
+ * A has one fix since it was merged up to "next".
+
+ * B has finished.  It has been fully merged up to "master" and "next",
+   and is ready to be deleted.
+
+ * C has not merged to "next" at all.
+
+We would want to allow C to be rebased, refuse A, and encourage
+B to be deleted.
+
+To compute (1):
+
+	git rev-list ^master ^topic next
+	git rev-list ^master        next
+
+	if these match, topic has not merged in next at all.
+
+To compute (2):
+
+	git rev-list master..topic
+
+	if this is empty, it is fully merged to "master".
+
+DOC_END
+
+
+### .\.git\hooks\pre-receive.sample ###
+#!/bin/sh
+#
+# An example hook script to make use of push options.
+# The example simply echoes all push options that start with 'echoback='
+# and rejects all pushes when the "reject" push option is used.
+#
+# To enable this hook, rename this file to "pre-receive".
+
+if test -n "$GIT_PUSH_OPTION_COUNT"
+then
+	i=0
+	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
+	do
+		eval "value=\$GIT_PUSH_OPTION_$i"
+		case "$value" in
+		echoback=*)
+			echo "echo from the pre-receive-hook: ${value#*=}" >&2
+			;;
+		reject)
+			exit 1
+		esac
+		i=$((i + 1))
+	done
+fi
+
+
+### .\.git\hooks\prepare-commit-msg.sample ###
+#!/bin/sh
+#
+# An example hook script to prepare the commit log message.
+# Called by "git commit" with the name of the file that has the
+# commit message, followed by the description of the commit
+# message's source.  The hook's purpose is to edit the commit
+# message file.  If the hook fails with a non-zero status,
+# the commit is aborted.
+#
+# To enable this hook, rename this file to "prepare-commit-msg".
+
+# This hook includes three examples. The first one removes the
+# "# Please enter the commit message..." help message.
+#
+# The second includes the output of "git diff --name-status -r"
+# into the message, just before the "git status" output.  It is
+# commented because it doesn't cope with --amend or with squashed
+# commits.
+#
+# The third example adds a Signed-off-by line to the message, that can
+# still be edited.  This is rarely a good idea.
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+/usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
+
+# case "$COMMIT_SOURCE,$SHA1" in
+#  ,|template,)
+#    /usr/bin/perl -i.bak -pe '
+#       print "\n" . `git diff --cached --name-status -r`
+# 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
+#  *) ;;
+# esac
+
+# SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
+# if test -z "$COMMIT_SOURCE"
+# then
+#   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
+# fi
+
+
+### .\.git\hooks\push-to-checkout.sample ###
+#!/bin/sh
+
+# An example hook script to update a checked-out tree on a git push.
+#
+# This hook is invoked by git-receive-pack(1) when it reacts to git
+# push and updates reference(s) in its repository, and when the push
+# tries to update the branch that is currently checked out and the
+# receive.denyCurrentBranch configuration variable is set to
+# updateInstead.
+#
+# By default, such a push is refused if the working tree and the index
+# of the remote repository has any difference from the currently
+# checked out commit; when both the working tree and the index match
+# the current commit, they are updated to match the newly pushed tip
+# of the branch. This hook is to be used to override the default
+# behaviour; however the code below reimplements the default behaviour
+# as a starting point for convenient modification.
+#
+# The hook receives the commit with which the tip of the current
+# branch is going to be updated:
+commit=$1
+
+# It can exit with a non-zero status to refuse the push (when it does
+# so, it must not modify the index or the working tree).
+die () {
+	echo >&2 "$*"
+	exit 1
+}
+
+# Or it can make any necessary changes to the working tree and to the
+# index to bring them to the desired state when the tip of the current
+# branch is updated to the new commit, and exit with a zero status.
+#
+# For example, the hook can simply run git read-tree -u -m HEAD "$1"
+# in order to emulate git fetch that is run in the reverse direction
+# with git push, as the two-tree form of git read-tree -u -m is
+# essentially the same as git switch or git checkout that switches
+# branches while keeping the local changes in the working tree that do
+# not interfere with the difference between the branches.
+
+# The below is a more-or-less exact translation to shell of the C code
+# for the default behaviour for git's push-to-checkout hook defined in
+# the push_to_deploy() function in builtin/receive-pack.c.
+#
+# Note that the hook will be executed from the repository directory,
+# not from the working tree, so if you want to perform operations on
+# the working tree, you will have to adapt your code accordingly, e.g.
+# by adding "cd .." or using relative paths.
+
+if ! git update-index -q --ignore-submodules --refresh
+then
+	die "Up-to-date check failed"
+fi
+
+if ! git diff-files --quiet --ignore-submodules --
+then
+	die "Working directory has unstaged changes"
+fi
+
+# This is a rough translation of:
+#
+#   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
+if git cat-file -e HEAD 2>/dev/null
+then
+	head=HEAD
+else
+	head=$(git hash-object -t tree --stdin </dev/null)
+fi
+
+if ! git diff-index --quiet --cached --ignore-submodules $head --
+then
+	die "Working directory has staged changes"
+fi
+
+if ! git read-tree -u -m "$commit"
+then
+	die "Could not update working tree to new HEAD"
+fi
+
+
+### .\.git\hooks\sendemail-validate.sample ###
+#!/bin/sh
+
+# An example hook script to validate a patch (and/or patch series) before
+# sending it via email.
+#
+# The hook should exit with non-zero status after issuing an appropriate
+# message if it wants to prevent the email(s) from being sent.
+#
+# To enable this hook, rename this file to "sendemail-validate".
+#
+# By default, it will only check that the patch(es) can be applied on top of
+# the default upstream branch without conflicts in a secondary worktree. After
+# validation (successful or not) of the last patch of a series, the worktree
+# will be deleted.
+#
+# The following config variables can be set to change the default remote and
+# remote ref that are used to apply the patches against:
+#
+#   sendemail.validateRemote (default: origin)
+#   sendemail.validateRemoteRef (default: HEAD)
+#
+# Replace the TODO placeholders with appropriate checks according to your
+# needs.
+
+validate_cover_letter () {
+	file="$1"
+	# TODO: Replace with appropriate checks (e.g. spell checking).
+	true
+}
+
+validate_patch () {
+	file="$1"
+	# Ensure that the patch applies without conflicts.
+	git am -3 "$file" || return
+	# TODO: Replace with appropriate checks for this patch
+	# (e.g. checkpatch.pl).
+	true
+}
+
+validate_series () {
+	# TODO: Replace with appropriate checks for the whole series
+	# (e.g. quick build, coding style checks, etc.).
+	true
+}
+
+# main -------------------------------------------------------------------------
+
+if test "$GIT_SENDEMAIL_FILE_COUNTER" = 1
+then
+	remote=$(git config --default origin --get sendemail.validateRemote) &&
+	ref=$(git config --default HEAD --get sendemail.validateRemoteRef) &&
+	worktree=$(mktemp --tmpdir -d sendemail-validate.XXXXXXX) &&
+	git worktree add -fd --checkout "$worktree" "refs/remotes/$remote/$ref" &&
+	git config --replace-all sendemail.validateWorktree "$worktree"
+else
+	worktree=$(git config --get sendemail.validateWorktree)
+fi || {
+	echo "sendemail-validate: error: failed to prepare worktree" >&2
+	exit 1
+}
+
+unset GIT_DIR GIT_WORK_TREE
+cd "$worktree" &&
+
+if grep -q "^diff --git " "$1"
+then
+	validate_patch "$1"
+else
+	validate_cover_letter "$1"
+fi &&
+
+if test "$GIT_SENDEMAIL_FILE_COUNTER" = "$GIT_SENDEMAIL_FILE_TOTAL"
+then
+	git config --unset-all sendemail.validateWorktree &&
+	trap 'git worktree remove -ff "$worktree"' EXIT &&
+	validate_series
+fi
+
+
+### .\.git\hooks\update.sample ###
+#!/bin/sh
+#
+# An example hook script to block unannotated tags from entering.
+# Called by "git receive-pack" with arguments: refname sha1-old sha1-new
+#
+# To enable this hook, rename this file to "update".
+#
+# Config
+# ------
+# hooks.allowunannotated
+#   This boolean sets whether unannotated tags will be allowed into the
+#   repository.  By default they won't be.
+# hooks.allowdeletetag
+#   This boolean sets whether deleting tags will be allowed in the
+#   repository.  By default they won't be.
+# hooks.allowmodifytag
+#   This boolean sets whether a tag may be modified after creation. By default
+#   it won't be.
+# hooks.allowdeletebranch
+#   This boolean sets whether deleting branches will be allowed in the
+#   repository.  By default they won't be.
+# hooks.denycreatebranch
+#   This boolean sets whether remotely creating branches will be denied
+#   in the repository.  By default this is allowed.
+#
+
+# --- Command line
+refname="$1"
+oldrev="$2"
+newrev="$3"
+
+# --- Safety check
+if [ -z "$GIT_DIR" ]; then
+	echo "Don't run this script from the command line." >&2
+	echo " (if you want, you could supply GIT_DIR then run" >&2
+	echo "  $0 <ref> <oldrev> <newrev>)" >&2
+	exit 1
+fi
+
+if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
+	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
+	exit 1
+fi
+
+# --- Config
+allowunannotated=$(git config --type=bool hooks.allowunannotated)
+allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
+denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
+allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
+allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
+
+# check for no description
+projectdesc=$(sed -e '1q' "$GIT_DIR/description")
+case "$projectdesc" in
+"Unnamed repository"* | "")
+	echo "*** Project description file hasn't been set" >&2
+	exit 1
+	;;
+esac
+
+# --- Check types
+# if $newrev is 0000...0000, it's a commit to delete a ref.
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+if [ "$newrev" = "$zero" ]; then
+	newrev_type=delete
+else
+	newrev_type=$(git cat-file -t $newrev)
+fi
+
+case "$refname","$newrev_type" in
+	refs/tags/*,commit)
+		# un-annotated tag
+		short_refname=${refname##refs/tags/}
+		if [ "$allowunannotated" != "true" ]; then
+			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
+			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,delete)
+		# delete tag
+		if [ "$allowdeletetag" != "true" ]; then
+			echo "*** Deleting a tag is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,tag)
+		# annotated tag
+		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
+		then
+			echo "*** Tag '$refname' already exists." >&2
+			echo "*** Modifying a tag is not allowed in this repository." >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,commit)
+		# branch
+		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
+			echo "*** Creating a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,delete)
+		# delete branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/remotes/*,commit)
+		# tracking branch
+		;;
+	refs/remotes/*,delete)
+		# delete tracking branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	*)
+		# Anything else (is there anything else?)
+		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
+		exit 1
+		;;
+esac
+
+# --- Finished
+exit 0
+
+
+### .\.git\info\exclude ###
+# git ls-files --others --exclude-from=.git/info/exclude
+# Lines that start with '#' are comments.
+# For a project mostly in C, the following would be a good set of
+# exclude patterns (uncomment them if you want to use them):
+# *.[oa]
+# *~
+
+
+### .\.git\logs\HEAD ###
+0000000000000000000000000000000000000000 ec6fab50172baf993278e48b595b59e296192323 Diego <ingdiegoter1998@gmail.com> 1735320234 -0500	commit (initial): Initial commit with full project files
+ec6fab50172baf993278e48b595b59e296192323 0000000000000000000000000000000000000000 Diego <ingdiegoter1998@gmail.com> 1735320235 -0500	Branch: renamed refs/heads/master to refs/heads/main
+0000000000000000000000000000000000000000 ec6fab50172baf993278e48b595b59e296192323 Diego <ingdiegoter1998@gmail.com> 1735320235 -0500	Branch: renamed refs/heads/master to refs/heads/main
+
+
+### .\.git\logs\refs\heads\main ###
+0000000000000000000000000000000000000000 ec6fab50172baf993278e48b595b59e296192323 Diego <ingdiegoter1998@gmail.com> 1735320234 -0500	commit (initial): Initial commit with full project files
+ec6fab50172baf993278e48b595b59e296192323 ec6fab50172baf993278e48b595b59e296192323 Diego <ingdiegoter1998@gmail.com> 1735320235 -0500	Branch: renamed refs/heads/master to refs/heads/main
+
+
+### .\.git\logs\refs\remotes\origin\main ###
+0000000000000000000000000000000000000000 ec6fab50172baf993278e48b595b59e296192323 Diego <ingdiegoter1998@gmail.com> 1735320237 -0500	update by push
+
+
+### .\.git\objects\0a\0e87134a23c9c35e2800f0278b9ff29a28300a ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb0 in position 7: invalid start byte]
+
+
+### .\.git\objects\17\b207ce946df4218c31ca07a21fc49240b6d27c ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xd0 in position 18: invalid continuation byte]
+
+
+### .\.git\objects\1b\ce42d0d3d9f466cf4f3fd918c4272f13a43a18 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xa5 in position 2: invalid start byte]
+
+
+### .\.git\objects\2b\2b0e1b516441c5725915f0e3925109835797f1 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xc1 in position 4: invalid start byte]
+
+
+### .\.git\objects\2f\4c9527c6ea5b06fe9e59fdbd4386a8acd6c20e ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xad in position 2: invalid start byte]
+
+
+### .\.git\objects\30\5f698d0cee9971e888a1a52bf9e931048e42b8 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 19: invalid continuation byte]
+
+
+### .\.git\objects\3d\0729dce25a87fec81262826717d53710ff0e04 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xad in position 2: invalid start byte]
+
+
+### .\.git\objects\40\85dc8caa0508abe08f76cf25576ac7a1044795 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x8f in position 3: invalid start byte]
+
+
+### .\.git\objects\45\5cbb3d23d5546e89e6c9a40b0490f10b7a607b ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xed in position 2: invalid continuation byte]
+
+
+### .\.git\objects\4d\73cee4d8e75f3b50d2b9bb996f61cb399fcb8a ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xd5 in position 2: invalid continuation byte]
+
+
+### .\.git\objects\50\0d546ef6cb9856ba939da182392f260412bcc1 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xc5 in position 2: invalid continuation byte]
+
+
+### .\.git\objects\5e\0267d44f807ddd3854e7f879295647007ae523 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+
+
+### .\.git\objects\60\cf7e694872c9e4a4c9775e6caa928e42d56a4e ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb0 in position 7: invalid start byte]
+
+
+### .\.git\objects\60\e3615f7098febae48cf9796661df32109fb091 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xdb in position 8: invalid continuation byte]
+
+
+### .\.git\objects\65\5111f27c1803941110fec4a5a46f04e75212f7 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xed in position 2: invalid continuation byte]
+
+
+### .\.git\objects\65\d174aae12d088fc67aebf3c50c98a58576bc49 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+
+
+### .\.git\objects\70\994034f2219e30ee41a9a452ac0a34e1c680ba ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x88 in position 18: invalid start byte]
+
+
+### .\.git\objects\74\954615a23e96bf779be83243b5a3400613006f ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+
+
+### .\.git\objects\78\b25d105de9174d4f15874f7d3ebf79647e6ec8 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb4 in position 8: invalid start byte]
+
+
+### .\.git\objects\7a\2f69e632fb3b8b6f5be18df144a0a1089bdb83 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x8d in position 2: invalid start byte]
+
+
+### .\.git\objects\7c\e503c2dd97ba78597f6ff6e4393132753573f6 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xca in position 3: invalid continuation byte]
+
+
+### .\.git\objects\7d\0b92d5da64f23ffbbe8236925b2362961ed2fa ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb1 in position 8: invalid start byte]
+
+
+### .\.git\objects\7e\5022dc4e594c86977b9a046df7775dc72592d9 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xbd in position 2: invalid start byte]
+
+
+### .\.git\objects\8a\01bf35618b1b96c67752ce3506630a59180704 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xed in position 2: invalid continuation byte]
+
+
+### .\.git\objects\8b\656fce40e85633b5829fb2569f6845df00ddc2 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+
+
+### .\.git\objects\91\0ce8d77222387afe50c18784b8da49e80e50a3 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xc5 in position 2: invalid continuation byte]
+
+
+### .\.git\objects\9e\0862038bc6a949afc734d1936182005a5304ff ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xc5 in position 2: invalid continuation byte]
+
+
+### .\.git\objects\a0\a22b672294ccdbc4edde4a8871168d26943113 ###
+[Error al leer el archivo: 'utf-8' codec can't decode bytes in position 2-3: invalid continuation byte]
+
+
+### .\.git\objects\a4\60969f5d277a3a1dcb3348d1fb15a7babe34f8 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xad in position 2: invalid start byte]
+
+
+### .\.git\objects\a8\32e10ce629a0685d34e87449b26065944394f9 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xd3 in position 6: invalid continuation byte]
+
+
+### .\.git\objects\aa\e5a59399a5aea3ef6c5f686f62af1d8991491c ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x8d in position 2: invalid start byte]
+
+
+### .\.git\objects\b1\d87da2a890fc3891ad2bf31763e299c632e75e ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb6 in position 8: invalid start byte]
+
+
+### .\.git\objects\b5\c437dec91d6e434d401c451eb583b9367f0433 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xca in position 3: invalid continuation byte]
+
+
+### .\.git\objects\bf\500f060f0a8e5ddb9c1d6afae05b0f7a90f679 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xbd in position 2: invalid start byte]
+
+
+### .\.git\objects\c3\252905ffc4564e62ff133977215b25c78e841b ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x90 in position 3: invalid start byte]
+
+
+### .\.git\objects\c9\e5a385211271c01c1ba1fc1bde97a7810f5861 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x8d in position 3: invalid start byte]
+
+
+### .\.git\objects\cc\79db68a6e8a85a59dd5c882d87f5baa124f2f8 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x85 in position 14: invalid start byte]
+
+
+### .\.git\objects\d7\ad5db0e6c92ddd2d3de20b1305c71b64661b03 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 3: invalid continuation byte]
+
+
+### .\.git\objects\e0\36e832bf5c50c6eefdf8cfc1bb46fee982e2a4 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x90 in position 3: invalid start byte]
+
+
+### .\.git\objects\e3\d6196b4703b24ff8a0545fa6a03f0955c83576 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xcd in position 2: invalid continuation byte]
+
+
+### .\.git\objects\e6\9de29bb2d1d6434b8b29ae775ad8c2e48c5391 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xca in position 3: invalid continuation byte]
+
+
+### .\.git\objects\e9\2909639419f77f1c0c25d4be7b5bea4273c9f5 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xb5 in position 2: invalid start byte]
+
+
+### .\.git\objects\eb\2785e86e77070930062bd8807e8627ff26ad82 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x95 in position 2: invalid start byte]
+
+
+### .\.git\objects\ec\6fab50172baf993278e48b595b59e296192323 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x9d in position 2: invalid start byte]
+
+
+### .\.git\objects\ef\78edd2474aaa44891549743320318673a64cf2 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0x8e in position 3: invalid start byte]
+
+
+### .\.git\objects\f5\404ea164cf1b6422632467cc5d19849eff042a ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xbd in position 2: invalid start byte]
+
+
+### .\.git\objects\fc\4ed00f133aeae47b50e30a77286832d97797d0 ###
+[Error al leer el archivo: 'utf-8' codec can't decode byte 0xed in position 2: invalid continuation byte]
+
+
+### .\.git\refs\heads\main ###
+ec6fab50172baf993278e48b595b59e296192323
+
+
+### .\.git\refs\remotes\origin\main ###
+ec6fab50172baf993278e48b595b59e296192323
+
+
 ### .\documentos\admin.py ###
 from django.contrib import admin
 from .models import (
     SerieDocumental, SubserieDocumental, RegistroDeArchivo, PermisoUsuarioSerie, 
-    EntidadProductora, UnidadAdministrativa, OficinaProductora, Objeto, FUID
+    EntidadProductora, UnidadAdministrativa, OficinaProductora, Objeto, FUID, FichaPaciente
 )
 
 
@@ -173,6 +1335,16 @@ class FUIDAdmin(admin.ModelAdmin):
     search_fields = ('id', 'entidad_productora__nombre', 'unidad_administrativa__nombre', 'oficina_productora__nombre', 'objeto__nombre')
     filter_horizontal = ('registros',)  # Para administrar el ManyToManyField
 
+@admin.register(FichaPaciente)
+class FichaPacienteAdmin(admin.ModelAdmin):
+    list_display = ('consecutivo', 'primer_nombre', 'primer_apellido', 'num_identificacion', 'Numero_historia_clinica', 'activo')
+    list_filter = ('activo', 'sexo', 'tipo_identificacion')
+    search_fields = ('primer_nombre', 'primer_apellido', 'num_identificacion', 'Numero_historia_clinica')
+
+# @admin.register(PerfilUsuario)
+# class PerfilUsuarioAdmin(admin.ModelAdmin):
+#     list_display = ('user', 'oficina')
+#     search_fields = ('user__username', 'oficina__nombre')
 
 ### .\documentos\apps.py ###
 from django.apps import AppConfig
@@ -788,6 +1960,8 @@ class FichaPaciente (models.Model):
     sexo = models.CharField(max_length=10, default='Masculino')
     activo = models.BooleanField(default=True)
 
+    
+
     def __str__(self):
         return f"Ficha del paciente  {self.primer_nombre} con identificacion {self.num_identificacion}"
     
@@ -888,7 +2062,10 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('registros/completo/', views.lista_completa_registros, name='lista_completa_registros'),
     path('fuids/', views.lista_fuids, name='lista_fuids'),
-    # path('fuids/', lista_fuids, name='lista_fuids'),
+    #fuids y registros
+    path('fuids/<int:fuid_id>/form_registro/', views.form_registro_fuid_ajax, name='form_registro_fuid_ajax'),
+    path('fuids/<int:fuid_id>/crear_registro/', views.crear_registro_fuid_ajax, name='crear_registro_fuid_ajax'),
+    path('fuids/', lista_fuids, name='lista_fuids'),
     path('fuids/create/', FUIDCreateView.as_view(), name='crear_fuid'),
     path('fuids/edit/<int:pk>/', FUIDUpdateView.as_view(), name='editar_fuid'),
     path('fuids/detalle/<int:pk>/', detalle_fuid, name='detalle_fuid'),
@@ -899,10 +2076,11 @@ urlpatterns = [
     path('detalle-ficha/<int:consecutivo>/', detalle_ficha_paciente, name='detalle_ficha'),
     path('api/lista-fichas/', ListaFichasAPIView.as_view(), name='api_lista_fichas'),
     path('fuid/<int:pk>/export-excel/', export_fuid_to_excel, name='export_fuid_to_excel'),
+    path('fuids/<int:fuid_id>/agregar_registro/', views.agregar_registro_a_fuid, name='agregar_registro_a_fuid'),
       # Otras rutas de tu app...
+    path('estadisticas/pacientes/', views.estadisticas_pacientes, name='estadisticas_pacientes'),
+    path('estadisticas/registros/', views.estadisticas_pacientes, name='estadisticas_pacientes'),
     path('estadisticas/fuids/', estadisticas_fuids, name='estadisticas_fuids'),
-    path('estadisticas/registros/', estadisticas_registros, name='estadisticas_registros'),
-    path('estadisticas/pacientes/', estadisticas_pacientes, name='estadisticas_pacientes'),
     path('estadisticas/', pagina_estadisticas, name='pagina_estadisticas'),
     path('api/usuarios/', obtener_usuarios, name='obtener_usuarios'),
     # path('adminlte/', TemplateView.as_view(template_name="admin-lte/index.html"), name="adminlte_index"),
@@ -941,6 +2119,13 @@ urlpatterns = [
 from datetime import date, datetime  # Manejo de fechas y horas
 
 # Importaciones de Django
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import HttpResponseForbidden
+from guardian.shortcuts import get_perms
+from .models import RegistroDeArchivo, SubserieDocumental
+from .forms import RegistroDeArchivoForm
+from django.utils.decorators import method_decorator
 from django.contrib import messages  # Envío de mensajes al contexto (ejemplo: mensajes de éxito o error)
 from django.contrib.auth.decorators import login_required  # Decorador para restringir acceso a usuarios autenticados
 from django.contrib.auth.mixins import LoginRequiredMixin  # Mixin para vistas basadas en clases que requieren autenticación
@@ -992,8 +2177,11 @@ def lista_registros(request):
     registros = RegistroDeArchivo.objects.all()
     return render(request, 'registro_list.html', {'registros': registros})
 
+
 @login_required
 def crear_registro(request):
+    if not request.user.has_perm('documentos.add_registrodearchivo'):
+        return HttpResponseForbidden("No tienes permiso para crear registros.")
     if request.method == 'POST':
         form = RegistroDeArchivoForm(request.POST)
         if form.is_valid():
@@ -1026,20 +2214,29 @@ def crear_registro(request):
     return render(request, 'registro_form.html', {'form': form})
 
 
+
+
 @login_required
 def editar_registro(request, pk):
     registro = get_object_or_404(RegistroDeArchivo, id=pk)
-    
-    # Verificación de permisos
+
+    # 1) Si no es superusuario, verifica que el registro sea suyo
     if not request.user.is_superuser:
-        if 'documentos.edit_own_registro' not in get_perms(request.user, registro):
+        if registro.creado_por != request.user:
+            return HttpResponseForbidden("No puedes editar un registro que no creaste.")
+
+        # 2) Verifica que tenga el permiso de objeto a nivel de Guardian
+        perms_del_usuario = get_perms(request.user, registro)
+        if 'documentos.edit_own_registro' not in perms_del_usuario:
             return HttpResponseForbidden("No tienes permiso para editar este registro.")
 
     if request.method == 'POST':
         form = RegistroDeArchivoForm(request.POST, instance=registro)
+        # Lógica de subseries
         codigo_serie = request.POST.get('codigo_serie')
         if codigo_serie:
             form.fields['codigo_subserie'].queryset = SubserieDocumental.objects.filter(serie_id=codigo_serie)
+
         if form.is_valid():
             form.save()
             return redirect('lista_registros')
@@ -1051,6 +2248,7 @@ def editar_registro(request, pk):
             form.fields['codigo_subserie'].queryset = SubserieDocumental.objects.none()
 
     return render(request, 'registro_form.html', {'form': form})
+
 
 
 from guardian.utils import get_anonymous_user
@@ -1349,11 +2547,85 @@ def registros_api_con_id(request):
 
 # Vista para crear un FUID
 
+# vistas.py (parte)
+
+from django.template.loader import render_to_string
+from django.http import JsonResponse
+
+@login_required
+def form_registro_fuid_ajax(request, fuid_id):
+    """
+    Retorna el HTML parcial de un formulario para crear un RegistroDeArchivo
+    asociado a un FUID, listo para inyectar en un modal.
+    """
+    fuid = get_object_or_404(FUID, pk=fuid_id)
+    form = RegistroDeArchivoForm()  # Form vacío
+    
+    # Renderizamos un template parcial con el formulario
+    html_form = render_to_string(
+        'partials/_form_registro.html',
+        {'form': form, 'fuid': fuid},
+        request=request
+    )
+    return JsonResponse({'html_form': html_form})
+
+@login_required
+def crear_registro_fuid_ajax(request, fuid_id):
+    fuid = get_object_or_404(FUID, pk=fuid_id)
+
+    if request.method == 'POST':
+        form = RegistroDeArchivoForm(request.POST)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.creado_por = request.user
+            registro.save()
+
+            # Asignar permisos a nivel de objeto (si usas Guardian)
+            assign_perm('documentos.view_own_registro', request.user, registro)
+            assign_perm('documentos.edit_own_registro', request.user, registro)
+            assign_perm('documentos.delete_own_registro', request.user, registro)
+
+            # Asociar con FUID
+            fuid.registros.add(registro)
+
+            # Devolvemos éxito y el registro en JSON, para actualizar la tabla sin recargar
+            return JsonResponse({
+                'ok': True,
+                'message': 'Registro creado exitosamente.',
+                'registro': {
+                    'id': registro.id,
+                    'numero_orden': registro.numero_orden,
+                    'codigo': registro.codigo or '',
+                    # ... agrega las demás propiedades que necesites en el JS
+                }
+            })
+        else:
+            # Devolvemos el HTML del form con errores
+            html_form = render_to_string(
+                'partials/_form_registro.html',
+                {'form': form, 'fuid': fuid},
+                request=request
+            )
+            return JsonResponse({'ok': False, 'html_form': html_form})
+
+    # Si no es POST, retornamos un 405 o algo similar
+    return JsonResponse({'ok': False, 'message': 'Método no permitido'}, status=405)
+
+
+from django.http import HttpResponseForbidden
+from guardian.shortcuts import assign_perm
+
 class FUIDCreateView(LoginRequiredMixin, CreateView):
     model = FUID
     form_class = FUIDForm
     template_name = "fuid_form.html"
     success_url = reverse_lazy("lista_fuids")
+
+    def dispatch(self, request, *args, **kwargs):
+        # Verifica si el usuario tiene permiso global para crear FUIDs
+        if not request.user.has_perm('documentos.add_fuid'):
+            return HttpResponseForbidden("No tienes permiso para crear FUIDs.")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
@@ -1377,20 +2649,17 @@ class FUIDCreateView(LoginRequiredMixin, CreateView):
         form.fields['registros'].queryset = registros
         return form
 
-    # Mantén el decorador @login_required si lo deseas, aunque 
-    # LoginRequiredMixin normalmente ya restringe el acceso a la clase
-    @login_required
     def form_valid(self, form):
         # Asigna automáticamente el usuario que crea el FUID
         form.instance.creado_por = self.request.user
         fuid = form.save()
 
-        # Agrega los permisos a nivel de objeto con Guardian:
+        # Asigna permisos a nivel de objeto al creador usando django-guardian
         assign_perm('documentos.view_own_fuid', self.request.user, fuid)
         assign_perm('documentos.edit_own_fuid', self.request.user, fuid)
         assign_perm('documentos.delete_own_fuid', self.request.user, fuid)
 
-        # Mantén tu lógica para asociar registros
+        # Asociar registros al FUID
         registros = form.cleaned_data["registros"]
         fuid.registros.set(registros)
 
@@ -1399,11 +2668,22 @@ class FUIDCreateView(LoginRequiredMixin, CreateView):
 
 
 
-class FUIDUpdateView(UpdateView):
+
+class FUIDUpdateView(LoginRequiredMixin, UpdateView):
     model = FUID
     form_class = FUIDForm
     template_name = "fuid_form.html"
     success_url = reverse_lazy("lista_fuids")
+
+    def dispatch(self, request, *args, **kwargs):
+        # Obtén el objeto que se va a editar
+        fuid = self.get_object()
+
+        # Verifica si el usuario tiene el permiso de editar este objeto
+        if not request.user.is_superuser and 'edit_own_fuid' not in get_perms(request.user, fuid):
+            return HttpResponseForbidden("No tienes permiso para editar este FUID.")
+
+        return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         # Pasa argumentos adicionales al formulario
@@ -1430,31 +2710,69 @@ def detalle_fuid(request, pk):
     return render(request, 'fuid_complete_list.html', {'fuid': fuid, 'registros': registros})
 
 @login_required
+def agregar_registro_a_fuid(request, fuid_id):
+    fuid = get_object_or_404(FUID, pk=fuid_id)
+
+    if request.method == 'POST':
+        form = RegistroDeArchivoForm(request.POST)
+        if form.is_valid():
+            # 1. Crear el registro y asignar creador
+            registro = form.save(commit=False)
+            registro.creado_por = request.user
+            registro.save()
+
+            # 2. (Opcional) Asignar permisos a nivel de objeto con Guardian
+            assign_perm('documentos.view_own_registro', request.user, registro)
+            assign_perm('documentos.edit_own_registro', request.user, registro)
+            assign_perm('documentos.delete_own_registro', request.user, registro)
+
+            # 3. Asociar el registro recién creado con el FUID
+            fuid.registros.add(registro)
+
+            messages.success(request, 'Registro creado y asociado correctamente al FUID.')
+            return redirect('detalle_fuid', pk=fuid.id)  # Volver a la página detalle
+        else:
+            for field, errors in form.errors.items():
+                field_name = form.fields[field].label
+                for error in errors:
+                    messages.error(request, f"{field_name}: {error}")
+    else:
+        form = RegistroDeArchivoForm()
+
+    return render(request, 'agregar_registro_a_fuid.html', {
+        'form': form,
+        'fuid': fuid
+    })
+
+@login_required
 def welcome_view(request):
     return render(request, 'welcome.html')
 
+from django.http import HttpResponseForbidden
+
 @login_required
 def crear_ficha_paciente(request):
+    # Verificar si el usuario tiene permiso global para agregar fichas
+    if not request.user.has_perm('documentos.add_fichapaciente'):
+        return HttpResponseForbidden("No tienes permiso para crear fichas de pacientes.")
+
     if request.method == 'POST':
         form = FichaPacienteForm(request.POST)
         if form.is_valid():
-            form.save()
+            ficha = form.save()
             messages.success(request, 'Ficha del paciente registrada exitosamente.')
             return redirect('crear_ficha')  # Redirige a la misma página o a otra URL
-        else:
-            # Personalizar nombres de campos para los errores
+        else:   
+            # Manejo de errores en el formulario
             for field, errors in form.errors.items():
-                if field == 'num_identificacion':
-                    field_name = 'Número de Identificación'
-                elif field == 'Numero_historia_clinica':
-                    field_name = 'Número de Historia Clínica'
-                else:
-                    field_name = field  # En caso de que falte algún campo
+                field_name = form.fields[field].label
                 for error in errors:
                     messages.error(request, f"{field_name}: {error}")
     else:
         form = FichaPacienteForm()
+
     return render(request, 'ficha_paciente_form.html', {'form': form})
+
 
 
 @login_required
@@ -1462,12 +2780,22 @@ def lista_fichas_paciente(request):
     fichas = FichaPaciente.objects.all()
     return render(request, 'lista_fichas_paciente.html', {'fichas': fichas})
 
+@method_decorator(login_required, name='dispatch')
 class EditarFichaPaciente(UpdateView):
     model = FichaPaciente
     fields = '__all__'
     template_name = 'ficha_paciente_form.html'
     success_url = reverse_lazy('lista_fichas')
     pk_url_kwarg = 'consecutivo'  # Usar 'consecutivo' en lugar de 'pk'
+
+    def dispatch(self, request, *args, **kwargs):
+        # Verificar si el usuario tiene permiso global para editar fichas
+        if not request.user.has_perm('documentos.change_fichapaciente'):
+            return HttpResponseForbidden("No tienes permiso para editar fichas de pacientes.")
+        
+        # Verificar que la ficha existe
+        self.object = get_object_or_404(FichaPaciente, consecutivo=kwargs.get(self.pk_url_kwarg))
+        return super().dispatch(request, *args, **kwargs)
 
 
 
@@ -1755,7 +3083,7 @@ def export_fuid_to_excel(request, pk):
     return response
 
 
-@login_required
+#  @login_required
 def calcular_edad(fecha_nacimiento):
     """
     Calcula la edad actual basada en la fecha de nacimiento.
@@ -1764,7 +3092,7 @@ def calcular_edad(fecha_nacimiento):
         hoy = date.today()
         return hoy.year - fecha_nacimiento.year - ((hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day))
     return None
-@login_required
+# @login_required
 def estadisticas_pacientes(request):
     """
     API para devolver estadísticas de pacientes considerando varios atributos.
@@ -1797,7 +3125,7 @@ def estadisticas_pacientes(request):
 
     return JsonResponse(datos, safe=False)
 
-@login_required
+# @login_required
 def estadisticas_registros(request):
     """
     API para devolver estadísticas de registros, organizados por series documentales y tipos.
@@ -1834,7 +3162,7 @@ def estadisticas_registros(request):
 
 
 
-@login_required
+# @login_required
 def estadisticas_fuids(request):
     """
     API para devolver estadísticas de FUIDs, organizados por oficinas productoras.
@@ -1854,7 +3182,7 @@ def estadisticas_fuids(request):
 
     return JsonResponse(datos, safe=False)
 
-@login_required
+# @login_required
 def pagina_estadisticas(request):
     """
     Página principal para mostrar gráficos de las estadísticas.
@@ -1891,6 +3219,7 @@ class OficinaFilterMixin:
             if (not request.user.is_superuser) and (obj.oficina_productora != request.user.perfil.oficina):
                 return HttpResponseForbidden("No tienes permiso sobre este recurso.")
         return super().dispatch(request, *args, **kwargs)
+
 
 
 
@@ -2256,6 +3585,56 @@ footer a:hover {
 [Error al leer el archivo: 'utf-8' codec can't decode byte 0x89 in position 0: invalid start byte]
 
 
+### .\documentos\templates\agregar_registro_a_fuid.html ###
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<div class="container">
+    <h1>Crear/Editar Registro</h1>
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Guardar</button>
+    </form>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Al cambiar la serie, cargamos subseries
+        $("#id_codigo_serie").change(function() {
+            var serieId = $(this).val();  // ID de la serie seleccionada
+            if (serieId) {
+                $.ajax({
+                    url: "{% url 'cargar_subseries' %}",
+                    data: {
+                        'serie_id': serieId
+                    },
+                    dataType: 'json',
+                    success: function(data) {
+                        var subserieSelect = $("#id_codigo_subserie");
+                        subserieSelect.empty();  // Vacía el select
+                        subserieSelect.append('<option value="">Seleccione una subserie</option>');
+                        
+                        $.each(data, function(index, item) {
+                            // item.id e item.nombre vienen del .values('id','nombre')
+                            subserieSelect.append('<option value="' + item.id + '">' + item.nombre + '</option>');
+                        });
+                    }
+                });
+            } else {
+                // Si no se seleccionó nada, vaciamos las subseries
+                $("#id_codigo_subserie").empty();
+                $("#id_codigo_subserie").append('<option value="">Seleccione una subserie</option>');
+            }
+        });
+    });
+</script>
+
+{% endblock %}
+
+
 ### .\documentos\templates\base.html ###
 {% load static %}
 
@@ -2598,276 +3977,169 @@ footer p {
 ### .\documentos\templates\ficha_paciente_form.html ###
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registrar Ficha del Paciente</title>
+    <title>Editar Ficha del Paciente</title>
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-        <!-- Animate.css -->
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
-        <!-- Bootstrap Icons -->
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 
-    <!-- <style>
-        body {
-            background: linear-gradient(135deg, #f0f2f5 0%, #ffffff 100%);
-        }
-        .navbar {
-            background-color: #007bff;
-        }
-        .navbar-brand {
-            color: #fff !important;
-            font-weight: bold;
-        }
-        .card {
-            border-radius: 10px;
-            border: none;
-        }
-        .card-body {
-            padding: 2rem;
-        }
-        .form-section-title {
-            font-size: 1.25rem;
-            font-weight: bold;
-            margin-top: 1.5rem;
-            margin-bottom: 1rem;
-            color: #555;
-            border-bottom: 2px solid #e0e0e0;
-            padding-bottom: 0.5rem;
-        }
-        label {
-            font-weight: 500;
-            margin-bottom: 0.3rem;
-        }
-        .form-control {
-            border-radius: 5px;
-            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        }
-        .form-control:focus {
-            border-color: #80bdff;
-            box-shadow: 0 0 0 .2rem rgba(0,123,255,.25);
-        }
-        .btn-primary {
-            background-color: #007bff;
-            border: none;
-            border-radius: 5px;
-            font-weight: 600;
-            transition: background-color 0.2s ease-in-out;
-        }
-        .btn-primary:hover {
-            background-color: #0056b3;
-        }
-        .alert {
-            margin-bottom: 2rem;
-        }
-    </style> -->
+    <!-- Animate.css -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body>
     <main>
-    <!-- Barra de navegación superior -->
-    <nav class="navbar navbar-light bg-light mb-4 animate__animated animate__fadeInDown animate__delay-1s">
-        <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="/">
-                <i class="bi bi-archive-fill text-primary me-2" style="font-size:1.5rem;"></i>
-                Hospital del Sarare
-            </a>
-            <span class="navbar-text">
-                {% if request.user.is_authenticated %}
-                    Bienvenido, {{ request.user.username }} | <a href="{% url 'logout' %}">Cerrar sesión</a>
-                {% else %}
-                    <a href="{% url 'login' %}">Iniciar sesión</a>
-                {% endif %}
-            </span>
-        </div>
-    </nav>
+        <!-- Barra de navegación -->
+        <nav class="navbar navbar-light bg-light mb-4 animate__animated animate__fadeInDown animate__delay-1s">
+            <div class="container-fluid">
+                <a class="navbar-brand d-flex align-items-center" href="/">
+                    <i class="bi bi-archive-fill text-primary me-2" style="font-size:1.5rem;"></i>
+                    Hospital del Sarare
+                </a>
+                <span class="navbar-text">
+                    {% if request.user.is_authenticated %}
+                        Bienvenido, {{ request.user.username }} | 
+                        <a href="{% url 'logout' %}" class="text-danger">Cerrar sesión</a>
+                    {% else %}
+                        <a href="{% url 'login' %}" class="text-primary">Iniciar sesión</a>
+                    {% endif %}
+                </span>
+            </div>
+        </nav>
 
-    <div class="container mt-5 mb-5">
-        <h1 class="text-center mb-4">Registrar Ficha del Paciente</h1>
-        
-        <!-- Mensajes de éxito -->
-        {% if messages %}
-        <div>
-            {% for message in messages %}
-                {% if message.tags == 'success' %}
-                    <div class="alert alert-success" role="alert">
+        <!-- Contenedor principal -->
+        <div class="container mt-5 mb-5">
+            <h1 class="text-center mb-4">Editar Ficha del Paciente</h1>
+
+            <!-- Mensajes de Django -->
+            {% if messages %}
+            <div>
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} animate__animated animate__fadeIn" role="alert">
                         {{ message }}
                     </div>
-                {% elif message.tags == 'error' %}
-                    <div class="alert alert-danger" role="alert">
-                        {{ message }}
-                    </div>
-                {% else %}
-                    <div class="alert alert-info" role="alert">
-                        {{ message }}
-                    </div>
-                {% endif %}
-            {% endfor %}
-        </div>
-        {% endif %}
-        
-        
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <form method="post" id="fichaPacienteForm">
-                    {% csrf_token %}
-                    
-                    <!-- Sección: Datos del Paciente -->
-                    <div class="form-section-title">Datos del Paciente</div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="id_primer_apellido">Primer Apellido</label>
-                            {{ form.primer_apellido }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_segundo_apellido">Segundo Apellido</label>
-                            {{ form.segundo_apellido }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_primer_nombre">Primer Nombre</label>
-                            {{ form.primer_nombre }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_segundo_nombre">Segundo Nombre</label>
-                            {{ form.segundo_nombre }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_num_identificacion">Número de Identificación</label>
-                            {{ form.num_identificacion }}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Formulario de edición -->
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form method="post" id="fichaPacienteForm">
+                        {% csrf_token %}
+
+                        <!-- Sección: Datos del Paciente -->
+                        <div class="form-section-title mb-3">Datos del Paciente</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="id_primer_apellido">Primer Apellido</label>
+                                {{ form.primer_apellido }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_segundo_apellido">Segundo Apellido</label>
+                                {{ form.segundo_apellido }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_primer_nombre">Primer Nombre</label>
+                                {{ form.primer_nombre }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_segundo_nombre">Segundo Nombre</label>
+                                {{ form.segundo_nombre }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_num_identificacion">Número de Identificación</label>
+                                {{ form.num_identificacion }}
+                            </div>
                             <div class="col-md-6 mb-3">
                                 <label for="id_tipo_identificacion">Tipo de Documento</label>
-                                <select name="tipo_identificacion" id="id_tipo_identificacion" class="form-select">
-                                    <option value="Cédula de Ciudadanía">Cédula de Ciudadanía</option>
-                                    <option value="Tarjeta de Identidad">Tarjeta de Identidad</option>
-                                    <option value="Pasaporte">Pasaporte</option>
-                                    <option value="Registro Civil">Registro Civil</option>
-                                </select>
+                                {{ form.tipo_identificacion }}
                             </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_fecha_nacimiento">Fecha de Nacimiento</label>
+                                {{ form.fecha_nacimiento }}
+                            </div>
+                        </div>
 
+                        <!-- Sección: Datos del Padre -->
+                        <div class="form-section-title mb-3">Datos del Padre</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="id_primer_nombre_padre">Primer Nombre del Padre</label>
+                                {{ form.primer_nombre_padre }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_segundo_nombre_padre">Segundo Nombre del Padre</label>
+                                {{ form.segundo_nombre_padre }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_primer_apellido_padre">Primer Apellido del Padre</label>
+                                {{ form.primer_apellido_padre }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_segundo_apellido_padre">Segundo Apellido del Padre</label>
+                                {{ form.segundo_apellido_padre }}
+                            </div>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_fecha_nacimiento">Fecha de Nacimiento</label>
-                            {{ form.fecha_nacimiento }}
-                        </div>
-                    </div>
 
-                    <!-- Sección: Datos del Padre -->
-                    <div class="form-section-title">Datos del Padre</div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="id_primer_nombre_padre">Primer Nombre del Padre</label>
-                            {{ form.primer_nombre_padre }}
+                        <!-- Sección: Datos Administrativos -->
+                        <div class="form-section-title mb-3">Datos Administrativos</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="id_Numero_historia_clinica">Número de Historia Clínica</label>
+                                {{ form.Numero_historia_clinica }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_caja">Número de Caja</label>
+                                {{ form.caja }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_carpeta">Número de Carpeta</label>
+                                {{ form.carpeta }}
+                            </div>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_segundo_nombre_padre">Segundo Nombre del Padre</label>
-                            {{ form.segundo_nombre_padre }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_primer_apellido_padre">Primer Apellido del Padre</label>
-                            {{ form.primer_apellido_padre }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_segundo_apellido_padre">Segundo Apellido del Padre</label>
-                            {{ form.segundo_apellido_padre }}
-                        </div>
-                    </div>
 
-                    <!-- Sección: Datos Administrativos -->
-                    <div class="form-section-title">Datos Administrativos</div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="id_Numero_historia_clinica">Número de Historia Clínica</label>
-                            {{ form.Numero_historia_clinica }}
+                        <!-- Sección: Datos Adicionales -->
+                        <div class="form-section-title mb-3">Datos Adicionales</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="id_sexo">Sexo</label>
+                                {{ form.sexo }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_activo">Estado</label>
+                                {{ form.activo }}
+                            </div>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_caja">Número de Caja</label>
-                            {{ form.caja }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="id_carpeta">Número de Carpeta</label>
-                            {{ form.carpeta }}
-                        </div>
-                    </div>
 
-                    <!-- Campos adicionales para 'sexo' y 'activo' -->
-<div class="form-section-title">Datos Adicionales</div>
-<div class="row">
-    <!-- Campo 'sexo' con opciones Masculino/Femenino -->
-    <div class="col-md-6 mb-3">
-        <label for="id_sexo">Sexo</label>
-        <select name="sexo" id="id_sexo" class="form-select">
-            <option value="Masculino">Masculino</option>
-            <option value="Femenino">Femenino</option>
-        </select>
-    </div>
-
-    <!-- Campo 'activo' con opción de 1 para activo y 0 para pasivo -->
-    <div class="col-md-6 mb-3">
-        <label for="id_activo">Estado</label>
-        <div class="form-check">
-            <input class="form-check-input" type="radio" name="activo" id="id_activo_1" value="1" checked>
-            <label class="form-check-label" for="id_activo_1">Activo</label>
-        </div>
-        <div class="form-check">
-            <input class="form-check-input" type="radio" name="activo" id="id_activo_0" value="0">
-            <label class="form-check-label" for="id_activo_0">Pasivo</label>
-        </div>
-    </div>
-</div>
-
-
-                    <button type="submit" class="btn btn-primary w-100 mt-4">Guardar Ficha</button>
-                </form>
+                        <!-- Botón de guardar -->
+                        <button type="submit" class="btn btn-primary w-100 mt-4">Guardar Ficha</button>
+                    </form>
+                </div>
             </div>
         </div>
-    </div>
-</main>
-    <footer>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center mt-4">
         <p>&copy; {{ current_year }} Hospital del Sarare - Central de Archivos del Sarare.</p>
     </footer>
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script> -->
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // Animar el contenedor principal con Anime.js
-        anime({
-            targets: '#mainContainer',
-            opacity: [0,1],
-            duration: 800,
-            easing: 'easeOutExpo'
-        });
 
-        // Animar las filas de la tabla
-        anime({
-            targets: '#fuidTable tbody tr',
-            opacity: [0,1],
-            translateY: [20,0],
-            duration: 500,
-            delay: anime.stagger(100),
-            easing: 'easeOutExpo'
-        });
-
-        // Animar el navbar
-        anime({
-            targets: 'nav.navbar',
-            opacity: [0,1],
-            duration: 500,
-            easing: 'easeOutExpo'
-        });
-    });
-</script>
+    <!-- Script para animaciones -->
     <script>
-        // Validar campos vacíos y asignarles "(N/A)" antes de enviar el formulario
-        document.getElementById('fichaPacienteForm').addEventListener('submit', function(event) {
-            const fields = ['id_primer_nombre_padre', 'id_segundo_nombre_padre', 'id_primer_apellido_padre', 'id_segundo_apellido_padre'];
-            fields.forEach(function(fieldId) {
-                const field = document.getElementById(fieldId);
-                if (field && field.value.trim() === '') {
-                    field.value = '(N/A)';
+        document.addEventListener('DOMContentLoaded', () => {
+            const messages = {{ message_list|safe }};
+            messages.forEach(message => {
+                if (message.tags === 'success') {
+                    alert(message.message);
                 }
             });
         });
@@ -3153,6 +4425,13 @@ footer p {
         <div class="info-card animate__animated animate__fadeInUp animate__delay-2s">
             <div class="info-card-header">
                 Registros Asociados al FUID
+                <!-- Dentro de fuid_complete_list.html, cerca de "Registros Asociados" -->
+<div class="text-end mb-3">
+    <a href="{% url 'agregar_registro_a_fuid' fuid.id %}" class="btn btn-sm btn-primary">
+        <i class="bi bi-plus-circle"></i> Agregar Registro
+    </a>
+</div>
+
             </div>
             <div class="card-body">
                 <div class="table-responsive" style="overflow-x:auto;">
@@ -3161,8 +4440,8 @@ footer p {
                             <tr>
                                 <th>N° Orden</th>
                                 <th>Código</th>
-                                <th>Cód. Serie</th>
-                                <th>Cód. Subserie</th>
+                                <th>Nombre Serie</th>
+                                <th>Nombre Subserie</th>
                                 <th>Unidad Documental</th>
                                 <th>F. Archivo</th>
                                 <th>F. Inicial</th>
@@ -3657,7 +4936,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista de FUIDs</title>
+    <title>Lista de FUID</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
@@ -3751,7 +5030,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <div class="container animate__animated animate__fadeInUp" id="mainContainer">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="animate__animated animate__fadeInDown">Lista de FUIDs</h1>
+        <h1 class="animate__animated animate__fadeInDown">Lista de FUID</h1>
         <a href="{% url 'crear_fuid' %}" class="btn btn-primary animate__animated animate__fadeInDown animate__delay-1s">
             <i class="bi bi-folder-plus"></i> Crear FUID
         </a>
@@ -5365,6 +6644,15 @@ footer p {
     </script>
 </body>
 </html>
+
+
+### .\documentos\templates\_form_registro.html ###
+<!-- templates/partials/_form_registro.html -->
+<form method="POST" id="formRegistro">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <input type="hidden" name="fuid" value="{{ fuid.id }}">
+</form>
 
 
 ### .\documentos\templates\images\fuid_logo.png ###

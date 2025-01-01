@@ -22,10 +22,8 @@ from .views import registros_api_con_id
 
 
 # from .views import export_fuids_to_excel
-
-
-
-
+from .views import mi_error_403
+handler403 = 'documentos.views.mi_error_403'
 
 urlpatterns = [
     path('', views.lista_registros, name='lista_registros'),  # Página principal de registros
@@ -54,6 +52,8 @@ urlpatterns = [
     path('fuid/<int:pk>/export-excel/', export_fuid_to_excel, name='export_fuid_to_excel'),
     path('fuids/<int:fuid_id>/agregar_registro/', views.agregar_registro_a_fuid, name='agregar_registro_a_fuid'),
       # Otras rutas de tu app...
+    path('estadisticas/pacientes/', views.estadisticas_pacientes, name='estadisticas_pacientes'),
+    path('estadisticas/registros/', views.estadisticas_pacientes, name='estadisticas_pacientes'),
     path('estadisticas/fuids/', estadisticas_fuids, name='estadisticas_fuids'),
     path('estadisticas/', pagina_estadisticas, name='pagina_estadisticas'),
     path('api/usuarios/', obtener_usuarios, name='obtener_usuarios'),

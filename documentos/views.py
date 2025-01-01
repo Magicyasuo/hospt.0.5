@@ -2,6 +2,13 @@
 from datetime import date, datetime  # Manejo de fechas y horas
 
 # Importaciones de Django
+from django.contrib.auth.decorators import permission_required
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import HttpResponseForbidden
+from guardian.shortcuts import get_perms
+from .models import RegistroDeArchivo, SubserieDocumental
+from .forms import RegistroDeArchivoForm
 from django.utils.decorators import method_decorator
 from django.contrib import messages  # Envío de mensajes al contexto (ejemplo: mensajes de éxito o error)
 from django.contrib.auth.decorators import login_required  # Decorador para restringir acceso a usuarios autenticados
@@ -54,8 +61,11 @@ def lista_registros(request):
     registros = RegistroDeArchivo.objects.all()
     return render(request, 'registro_list.html', {'registros': registros})
 
+
 @login_required
 def crear_registro(request):
+    if not request.user.has_perm('documentos.add_registrodearchivo'):
+        return HttpResponseForbidden("No tienes permiso para crear registros.")
     if request.method == 'POST':
         form = RegistroDeArchivoForm(request.POST)
         if form.is_valid():
@@ -66,7 +76,8 @@ def crear_registro(request):
             # 1) Asignar los permisos a nivel de objeto al usuario creador.
             assign_perm('documentos.view_own_registro', request.user, registro)
             assign_perm('documentos.edit_own_registro', request.user, registro)
-            assign_perm('documentos.delete_own_registro', request.user, registro)
+            # assign_perm('documentos.delete_own_registro', request.user, registro)
+            # se pueden modificar estas lineas para limitar los permisos al crearse el objeto, estos permisos se deben asignar desde la consola de django
 
             # 2) Mensajes de éxito
             messages.success(request, 'Registro de archivo creado exitosamente.')
@@ -88,26 +99,15 @@ def crear_registro(request):
     return render(request, 'registro_form.html', {'form': form})
 
 
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponseForbidden
-from guardian.shortcuts import get_perms
-from .models import RegistroDeArchivo, SubserieDocumental
-from .forms import RegistroDeArchivoForm
+
 
 @login_required
 def editar_registro(request, pk):
     registro = get_object_or_404(RegistroDeArchivo, id=pk)
 
-    # 1) Si no es superusuario, verifica que el registro sea suyo
-    if not request.user.is_superuser:
-        if registro.creado_por != request.user:
-            return HttpResponseForbidden("No puedes editar un registro que no creaste.")
-
-        # 2) Verifica que tenga el permiso de objeto a nivel de Guardian
-        perms_del_usuario = get_perms(request.user, registro)
-        if 'documentos.edit_own_registro' not in perms_del_usuario:
-            return HttpResponseForbidden("No tienes permiso para editar este registro.")
+    # Verifica si el usuario tiene permiso de edición a nivel de objeto
+    if not request.user.is_superuser and 'edit_own_registro' not in get_perms(request.user, registro):
+        return HttpResponseForbidden("No tienes permiso para editar este registro.")
 
     if request.method == 'POST':
         form = RegistroDeArchivoForm(request.POST, instance=registro)
@@ -127,6 +127,7 @@ def editar_registro(request, pk):
             form.fields['codigo_subserie'].queryset = SubserieDocumental.objects.none()
 
     return render(request, 'registro_form.html', {'form': form})
+
 
 
 
@@ -491,60 +492,78 @@ def crear_registro_fuid_ajax(request, fuid_id):
     return JsonResponse({'ok': False, 'message': 'Método no permitido'}, status=405)
 
 
+from django.http import HttpResponseForbidden
+from guardian.shortcuts import assign_perm
+
 class FUIDCreateView(LoginRequiredMixin, CreateView):
     model = FUID
     form_class = FUIDForm
     template_name = "fuid_form.html"
     success_url = reverse_lazy("lista_fuids")
 
+    def dispatch(self, request, *args, **kwargs):
+        # Verifica si el usuario tiene permiso global para crear FUIDs
+        if not request.user.has_perm('documentos.add_fuid'):
+            return HttpResponseForbidden("No tienes permiso para crear FUIDs.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_form(self, *args, **kwargs):
         form = super().get_form(*args, **kwargs)
 
-        # Obtener filtros de la solicitud
-        usuario = self.request.GET.get("usuario")
+        # Solo registros creados por el usuario autenticado
+        registros = RegistroDeArchivo.objects.filter(
+            fuids__isnull=True,
+            creado_por=self.request.user
+        )
+
+        # Aplicar filtros opcionales
         fecha_inicio = self.request.GET.get("fecha_inicio")
         fecha_fin = self.request.GET.get("fecha_fin")
-
-        # Construir queryset dinámico
-        registros = RegistroDeArchivo.objects.filter(fuids__isnull=True)
-
-        if usuario:
-            registros = registros.filter(creado_por_id=usuario)
         if fecha_inicio:
             registros = registros.filter(fecha_creacion__gte=fecha_inicio)
         if fecha_fin:
             registros = registros.filter(fecha_creacion__lte=fecha_fin)
 
-        # Ajustar el queryset de 'registros' en el formulario
+        # Asignar el queryset de registros al formulario
         form.fields['registros'].queryset = registros
+
+        # Establecer el usuario autenticado en el formulario y ocultarlo en la plantilla
+        form.fields['usuario'].initial = self.request.user.id
+        form.fields['usuario'].widget.attrs['readonly'] = True  # O simplemente excluirlo de la plantilla
         return form
 
-    # Mantén el decorador @login_required si lo deseas, aunque 
-    # LoginRequiredMixin normalmente ya restringe el acceso a la clase
     def form_valid(self, form):
         # Asigna automáticamente el usuario que crea el FUID
         form.instance.creado_por = self.request.user
         fuid = form.save()
 
-        # Agrega los permisos a nivel de objeto con Guardian:
+        # Asigna permisos a nivel de objeto al creador usando django-guardian
         assign_perm('documentos.view_own_fuid', self.request.user, fuid)
         assign_perm('documentos.edit_own_fuid', self.request.user, fuid)
         assign_perm('documentos.delete_own_fuid', self.request.user, fuid)
 
-        # Mantén tu lógica para asociar registros
+        # Asociar registros al FUID
         registros = form.cleaned_data["registros"]
         fuid.registros.set(registros)
 
         return super().form_valid(form)
 
 
-
-
-class FUIDUpdateView(UpdateView):
+class FUIDUpdateView(LoginRequiredMixin, UpdateView):
     model = FUID
     form_class = FUIDForm
     template_name = "fuid_form.html"
     success_url = reverse_lazy("lista_fuids")
+
+    def dispatch(self, request, *args, **kwargs):
+        # Obtén el objeto que se va a editar
+        fuid = self.get_object()
+
+        # Verifica si el usuario tiene el permiso de editar este objeto
+        if not request.user.is_superuser and 'edit_own_fuid' not in get_perms(request.user, fuid):
+            return HttpResponseForbidden("No tienes permiso para editar este FUID.")
+
+        return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         # Pasa argumentos adicionales al formulario
@@ -567,43 +586,69 @@ def lista_fuids(request):
 @login_required
 def detalle_fuid(request, pk):
     fuid = get_object_or_404(FUID, pk=pk)
+
+    # Verificar si el usuario tiene el permiso 'documentos.view_own_fuid'
+    if not request.user.has_perm('documentos.view_own_fuid', fuid):
+        # Si no tiene permiso, mostrar error 403
+        return mi_error_403(request)
+
+    # Asignar el permiso si es necesario
+    assign_perm('documentos.view_own_fuid', request.user, fuid)
+
+    # Obtener los registros relacionados
     registros = fuid.registros.all()
     return render(request, 'fuid_complete_list.html', {'fuid': fuid, 'registros': registros})
 
+
+
 @login_required
 def agregar_registro_a_fuid(request, fuid_id):
+    # Verificamos que el usuario tenga permiso de agregar registros
+    if not request.user.has_perm('documentos.add_registrodearchivo'):
+        return HttpResponseForbidden("No tienes permiso para crear registros.")
+    
+    # Obtenemos el FUID o mostramos 404 si no existe
     fuid = get_object_or_404(FUID, pk=fuid_id)
 
     if request.method == 'POST':
         form = RegistroDeArchivoForm(request.POST)
         if form.is_valid():
-            # 1. Crear el registro y asignar creador
+            # Guardamos el registro y asignamos el usuario creador
             registro = form.save(commit=False)
             registro.creado_por = request.user
             registro.save()
-
-            # 2. (Opcional) Asignar permisos a nivel de objeto con Guardian
+            
+            # Asignar permisos de objeto al usuario (opcional, si usas Guardian)
             assign_perm('documentos.view_own_registro', request.user, registro)
             assign_perm('documentos.edit_own_registro', request.user, registro)
-            assign_perm('documentos.delete_own_registro', request.user, registro)
+            # assign_perm('documentos.delete_own_registro', request.user, registro)
 
-            # 3. Asociar el registro recién creado con el FUID
+            # Asociar el registro recién creado al FUID
             fuid.registros.add(registro)
 
+            # Mensaje de éxito
             messages.success(request, 'Registro creado y asociado correctamente al FUID.')
-            return redirect('detalle_fuid', pk=fuid.id)  # Volver a la página detalle
+
+            # Si quieres limpiar el formulario y mantenerte en la misma página:
+            form = RegistroDeArchivoForm()
         else:
+            # Mostrar mensajes de error de validación
             for field, errors in form.errors.items():
                 field_name = form.fields[field].label
                 for error in errors:
                     messages.error(request, f"{field_name}: {error}")
     else:
+        # GET: formulario vacío
         form = RegistroDeArchivoForm()
+        # Subseries vacío por defecto (si no se ha seleccionado serie)
+        form.fields['codigo_subserie'].queryset = SubserieDocumental.objects.none()
 
+    # Renderiza un template específico para agregar registro a FUID
     return render(request, 'agregar_registro_a_fuid.html', {
         'form': form,
         'fuid': fuid
     })
+
 
 @login_required
 def welcome_view(request):
@@ -623,7 +668,7 @@ def crear_ficha_paciente(request):
             ficha = form.save()
             messages.success(request, 'Ficha del paciente registrada exitosamente.')
             return redirect('crear_ficha')  # Redirige a la misma página o a otra URL
-        else:
+        else:   
             # Manejo de errores en el formulario
             for field, errors in form.errors.items():
                 field_name = form.fields[field].label
@@ -636,10 +681,27 @@ def crear_ficha_paciente(request):
 
 
 
+from django.shortcuts import render
+
+def mi_error_403(request, exception=None):
+    return render(request, '403.html', status=403)
+
+
+
+from django.core.exceptions import PermissionDenied
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
+from django.http import HttpResponseForbidden
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required, permission_required
+
 @login_required
+@permission_required('documentos.view_fichapaciente', raise_exception=True)
 def lista_fichas_paciente(request):
     fichas = FichaPaciente.objects.all()
     return render(request, 'lista_fichas_paciente.html', {'fichas': fichas})
+
+
 
 @method_decorator(login_required, name='dispatch')
 class EditarFichaPaciente(UpdateView):
@@ -944,7 +1006,7 @@ def export_fuid_to_excel(request, pk):
     return response
 
 
-# @login_required
+#  @login_required
 def calcular_edad(fecha_nacimiento):
     """
     Calcula la edad actual basada en la fecha de nacimiento.

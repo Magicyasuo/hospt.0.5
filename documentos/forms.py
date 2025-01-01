@@ -36,6 +36,7 @@ class RegistroDeArchivoForm(forms.ModelForm):
         model = RegistroDeArchivo
         # Excluimos explícitamente el campo 'creado_por'
         exclude = ['creado_por']
+        # exclude = ['codigo']
         widgets = {
             'fecha_archivo': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'fecha_inicial': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
@@ -103,7 +104,7 @@ class FUIDForm(forms.ModelForm):
     registros = forms.ModelMultipleChoiceField(
         queryset=RegistroDeArchivo.objects.none(),  
         widget=forms.CheckboxSelectMultiple,
-        required=True,
+        required=False,
         label="Registros Asociados"
     )
 
@@ -207,9 +208,7 @@ class FUIDForm(forms.ModelForm):
             self.fields['registros'].queryset = registros_actuales | registros_disponibles
         else:
             self.fields['registros'].queryset = RegistroDeArchivo.objects.filter(fuids__isnull=True)
-
-
-    
+  
 
 from django import forms
 from .models import FichaPaciente
@@ -271,7 +270,13 @@ class FichaPacienteForm(forms.ModelForm):
             'carpeta': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Número de carpeta',
-            }), 
+
+            }),
+            'Activo': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Estado',
+                
+            }),                 
         }
 
     def clean_Numero_historia_clinica(self):
@@ -287,46 +292,3 @@ class FichaPacienteForm(forms.ModelForm):
         return num_identificacion
 
         
-
-
-
-
-# hasta aca servia a las 4 `pm martes 10....................................................`
-# class RegistroDeArchivoForm(forms.ModelForm):
-#     codigo_serie = forms.ModelChoiceField(
-#         queryset=SerieDocumental.objects.all(),
-#         empty_label="Seleccione una serie"
-#     )
-#     codigo_subserie = forms.ModelChoiceField(
-#         queryset=SubserieDocumental.objects.none(),
-#         empty_label="Seleccione una subserie"
-#     )
-
-#     class Meta:
-#         model = RegistroDeArchivo
-#         fields = '__all__'
-# .............................................................................................
-
-
-
-# from django import forms
-# from .models import RegistroDeArchivo, SubserieDocumental, SerieDocumental
-
-# class RegistroDeArchivoForm(forms.ModelForm):
-#     class Meta:
-#         model = RegistroDeArchivo
-#         fields = '__all__'
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.fields['codigo_serie'].queryset = SerieDocumental.objects.all()
-#         self.fields['codigo_subserie'].queryset = SubserieDocumental.objects.none()
-
-#         if 'codigo_serie' in self.data:
-#             try:
-#                 serie_id = int(self.data.get('codigo_serie'))
-#                 self.fields['codigo_subserie'].queryset = SubserieDocumental.objects.filter(serie_id=serie_id)
-#             except (ValueError, TypeError):
-#                 pass
-#         elif self.instance.pk:
-#             self.fields['codigo_subserie'].queryset = SubserieDocumental.objects.filter(serie=self.instance.codigo_serie)

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     SerieDocumental, SubserieDocumental, RegistroDeArchivo, PermisoUsuarioSerie, 
-    EntidadProductora, UnidadAdministrativa, OficinaProductora, Objeto, FUID
+    EntidadProductora, UnidadAdministrativa, OficinaProductora, Objeto, FUID, FichaPaciente
 )
 
 
@@ -83,3 +83,14 @@ class FUIDAdmin(admin.ModelAdmin):
     list_filter = ('entidad_productora', 'unidad_administrativa', 'oficina_productora', 'objeto', 'creado_por')
     search_fields = ('id', 'entidad_productora__nombre', 'unidad_administrativa__nombre', 'oficina_productora__nombre', 'objeto__nombre')
     filter_horizontal = ('registros',)  # Para administrar el ManyToManyField
+
+@admin.register(FichaPaciente)
+class FichaPacienteAdmin(admin.ModelAdmin):
+    list_display = ('consecutivo', 'primer_nombre', 'primer_apellido', 'num_identificacion', 'Numero_historia_clinica', 'activo')
+    list_filter = ('activo', 'sexo', 'tipo_identificacion')
+    search_fields = ('primer_nombre', 'primer_apellido', 'num_identificacion', 'Numero_historia_clinica')
+
+# @admin.register(PerfilUsuario)
+# class PerfilUsuarioAdmin(admin.ModelAdmin):
+#     list_display = ('user', 'oficina')
+#     search_fields = ('user__username', 'oficina__nombre')

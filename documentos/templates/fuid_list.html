@@ -110,11 +110,11 @@
         <thead>
             <tr>
                 <th>ID</th>
-                <th>Entidad Productora</th>
                 <th>Unidad Administrativa</th>
                 <th>Oficina Productora</th>
                 <th>Objeto</th>
                 <th>Fecha de Creación</th>
+                <th>Creado por</th>
                 <th>Acciones</th>
             </tr>
         </thead>
@@ -122,11 +122,11 @@
             {% for fuid in fuids %}
             <tr>
                 <td>{{ fuid.id }}</td>
-                <td>{{ fuid.entidad_productora }}</td>
                 <td>{{ fuid.unidad_administrativa }}</td>
                 <td>{{ fuid.oficina_productora }}</td>
                 <td>{{ fuid.objeto }}</td>
                 <td>{{ fuid.fecha_creacion|date:"Y-m-d" }}</td>
+                <td>{{ fuid.creado_por }}</td>
                 <td>
                     <a href="{% url 'editar_fuid' fuid.id %}" class="btn btn-warning btn-sm"><i class="bi bi-pencil-square"></i> Editar</a>
                     <a href="{% url 'detalle_fuid' fuid.id %}" class="btn btn-info btn-sm"><i class="bi bi-eye"></i> Ver</a>
